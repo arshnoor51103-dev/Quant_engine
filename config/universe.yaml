@@ -1,0 +1,92 @@
+# universe.yaml — asset universe at current capital tier
+# Tier 1: Canadian-listed ETFs only
+# Tickers use Yahoo Finance format (.TO for TSX)
+
+universe:
+  # ─── GROWTH BUCKET ───────────────────────────────────────────
+  - ticker: VFV.TO
+    name: "Vanguard S&P 500 Index ETF (CAD-hedged: no)"
+    bucket: growth
+    asset_class: equity
+    region: US
+    mer: 0.0009   # 9bps
+    notes: Core US large-cap exposure, unhedged
+
+  - ticker: XIC.TO
+    name: iShares Core S&P/TSX Capped Composite Index ETF
+    bucket: growth
+    asset_class: equity
+    region: CA
+    mer: 0.0006
+    notes: TSX broad market
+
+  - ticker: HXQ.TO
+    name: Horizons NASDAQ-100 Index ETF
+    bucket: growth
+    asset_class: equity
+    region: US
+    mer: 0.0028
+    notes: Total return swap structure — tax-efficient in TFSA (no distributions)
+
+  - ticker: XEF.TO
+    name: iShares Core MSCI EAFE IMI Index ETF
+    bucket: growth
+    asset_class: equity
+    region: DEV_EX_NA
+    mer: 0.0022
+    notes: Developed markets ex North America
+
+  # ─── STABLE BUCKET ───────────────────────────────────────────
+  - ticker: VAB.TO
+    name: Vanguard Canadian Aggregate Bond Index ETF
+    bucket: stable
+    asset_class: fixed_income
+    region: CA
+    mer: 0.0009
+    notes: Broad Canadian bonds, intermediate duration
+
+  - ticker: ZAG.TO
+    name: BMO Aggregate Bond Index ETF
+    bucket: stable
+    asset_class: fixed_income
+    region: CA
+    mer: 0.0009
+    notes: Alternative to VAB, slightly different holdings
+
+  - ticker: HSAV.TO
+    name: Horizons High Interest Savings ETF
+    bucket: stable
+    asset_class: cash_equivalent
+    region: CA
+    mer: 0.0011
+    notes: HISA wrapper, tax-efficient via swap structure
+
+  # ─── DIVIDEND BUCKET ─────────────────────────────────────────
+  - ticker: CDZ.TO
+    name: iShares S&P/TSX Canadian Dividend Aristocrats Index ETF
+    bucket: dividend
+    asset_class: equity_div
+    region: CA
+    mer: 0.0066
+    notes: Companies with 5+ years of dividend growth
+
+  - ticker: VDY.TO
+    name: Vanguard FTSE Canadian High Dividend Yield Index ETF
+    bucket: dividend
+    asset_class: equity_div
+    region: CA
+    mer: 0.0022
+    notes: Bank/energy heavy, low MER alternative to CDZ
+
+# ─── DATA SOURCE ─────────────────────────────────────────────
+data_source:
+  provider: yfinance
+  history_years: 20
+  frequency: daily
+  fields: [Open, High, Low, Close, Adj Close, Volume]
+
+# ─── FUTURE TIERS (gated, not active) ────────────────────────
+future_tiers:
+  tier_2_unlock_nav: 10000
+  tier_3_unlock_nav: 25000
+  tier_4_unlock_nav: 50000

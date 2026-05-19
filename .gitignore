@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Data + state (regenerable)
+data/*.db
+data/*.parquet
+data/cache/
+
+# Logs
+logs/*.log
+logs/*.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (we don't have any yet but future-proof)
+.env
+secrets.yaml
