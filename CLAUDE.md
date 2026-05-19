@@ -134,8 +134,13 @@ quant_engine/
 
 ## Current Phase
 
-**Phase 1 — Foundation.** Goals: data pipeline, portfolio model, core risk metrics, working CLI. See `docs/PHASE_1_ROADMAP.md`.
+**Phase 2 — Signal Engine. Complete.**
+**Phase 3 — Optimizer + Trade Recommendations. Not started.**
+
+For a full picture of what's built, what's tested, all architectural decisions, all bugs found, current signal readings, backtest results, and the Phase 3 roadmap — read:
+
+**`docs/PROJECT_STATUS.md`** ← start here for any new session.
 
 ---
 
-*Last updated: Phase 1 scaffold, May 2026.*
+*Last updated: Phase 2 complete, 2026-05-19.*
