@@ -31,14 +31,7 @@ def signals_command(
     universe = load_universe()
     tickers = [a["ticker"] for a in universe]
 
-    # Load price data
-    prices = {}
-    for t in tickers:
-        ps = price_series(t, lookback_days=1260)
-        if not ps.empty:
-            prices[t] = ps
-
-    # Select signal
+    # Select signal first so we know the required lookback
     signal_map = {
         "momentum": MomentumSignal(),
         "momentum_short": ShortTermMomentum(),
@@ -49,6 +42,15 @@ def signals_command(
         return
 
     sig = signal_map[signal_type]
+
+    # Load enough history to satisfy the signal's lookback requirement
+    lookback = max(sig.lookback_days, 1260)
+    prices = {}
+    for t in tickers:
+        ps = price_series(t, lookback_days=lookback)
+        if not ps.empty:
+            prices[t] = ps
+
     result = sig.generate(prices)
 
     # Display
@@ -75,8 +77,10 @@ def signals_command(
     # Show metadata if vol regime
     if result.metadata and "regime" in result.metadata:
         console.print(f"\n[bold]Regime:[/bold] {result.metadata['regime']}")
-        console.print(f"[bold]Vol percentile:[/bold] {result.metadata.get('vol_percentile', 'n/a'):.1%}")
-        console.print(f"[bold]Current annualized vol:[/bold] {result.metadata.get('current_annualized_vol', 'n/a'):.2%}")
+        vp = result.metadata.get('vol_percentile')
+        cv = result.metadata.get('current_annualized_vol')
+        console.print(f"[bold]Vol percentile:[/bold] {vp:.1%}" if vp is not None else "[bold]Vol percentile:[/bold] n/a")
+        console.print(f"[bold]Current annualized vol:[/bold] {cv:.2%}" if cv is not None else "[bold]Current annualized vol:[/bold] n/a")
 
     # Show raw returns for momentum
     if result.metadata and "raw_returns" in result.metadata:
