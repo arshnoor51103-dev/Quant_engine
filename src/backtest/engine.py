@@ -123,11 +123,11 @@ def run_backtest(
         result = signal.generate(prices, run_date=current_date)
         ranked = result.ranked()
 
-        # Select top-N (highest scores)
+        # Select top-N (highest scores); ranked() returns descending so [:N] = top N
         if config.long_only:
-            holdings = [t for t, s in ranked[-config.top_n:] if s > 0]
+            holdings = [t for t, s in ranked[:config.top_n] if s > 0]
         else:
-            holdings = [t for t, _ in ranked[-config.top_n:]]
+            holdings = [t for t, _ in ranked[:config.top_n]]
 
         if not holdings:
             # No positive signals — hold cash (0 return)

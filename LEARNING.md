@@ -55,6 +55,14 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Bugs, bad signals, misjudgments. Post-mortem format. Pain teaches.
 
+### 2026-05-19 — Backtest engine sliced bottom-N instead of top-N tickers
+**What happened**: `quant backtest` showed 0.0 return, 0.0 vol, NaN Sharpe — strategy held cash every single period.
+**Root cause**: `result.ranked()` returns scores descending (highest first). `ranked[-top_n:]` slices the *last* N items — the lowest-scored tickers (bonds at -1.0 to -0.25). The `if s > 0` guard then filtered all of them out → empty holdings → cash.
+**Impact**: Every backtest run since Phase 2 landed would have returned zeros. No bad trade fired, but the backtest was useless.
+**Fix**: Changed `ranked[-config.top_n:]` to `ranked[:config.top_n]` in both the long-only and short-allowed branches of `engine.py`.
+**Guardrail added**: When slicing a ranked list, always comment the sort direction. `ranked()` is descending by default — `[:N]` = top N, `[-N:]` = bottom N.
+**Test added**: Need a backtest unit test that asserts `avg_holdings_per_period > 0` on a universe with known positive signals. (TODO Phase 2 test gap.)
+
 ### 2026-05-19 — Flaky test fixture: weak random drift doesn't guarantee momentum rank ordering
 **What happened**: `test_momentum_ranks_correctly` and `test_momentum_downtrend_is_negative` failed intermittently. Mock DOWN.TO ticker (seed 3, drift -0.001/day) produced higher 12-1 momentum than FLAT.TO in the specific random realization.
 **Root cause**: Daily drift of ±0.001 is swamped by 0.01 volatility over a 231-day window. The expected direction of cumulative return is not guaranteed with small samples.
