@@ -19,6 +19,49 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-22 — Mean reversion signal design (Phase 3 P1)
+**Context**: Mean reversion is the classic counterpart to momentum — buy recent losers, sell recent winners. Built it to test whether a 9-ETF Canadian universe has enough cross-sectional dispersion for the signal to show edge.
+**Key design decisions** (grill-me session before any code):
+- **Interface**: `generate(prices)` only — regime computed internally via `VolRegimeSignal` so the `Signal` ABC interface stays clean. No extended signature, no constructor injection.
+- **Z-score formula**: Rolling z-score of **daily log returns** at 20d (short-term reversal, Jegadeesh/Lehmann 1990) and 60d (intermediate reversion). `z_ts = 0.5 × z_20 + 0.5 × z_60`. This asks "was today's return extreme relative to recent history?" — not a cumulative window z-score.
+- **TS normalization**: `tanh(z_ts)` compresses raw z-scores to (−1, 1) while preserving rank ordering and handling outliers smoothly. Rejected: clip/3 (linear, less elegant), per-ticker rolling rank (adds second window, heavier).
+- **CS component**: Rank-normalize z_ts across all tickers at run_date → [-1,+1]. Same `_rank_normalize()` method as momentum.
+- **Regime-conditional blend**: `combined = w_ts × tanh(z_ts) + w_cs × z_cs`. Weights: CRISIS (0.70/0.30), HIGH_VOL (0.60/0.40), NORMAL (0.50/0.50), LOW_VOL (0.35/0.65). In CRISIS, idiosyncratic TS signal dominates (tickers decorrelate). In LOW_VOL, cross-sectional rank is more informative (high correlation = relative positioning matters).
+- **Sign flip**: Multiply combined by −1 before final rank-normalize. Oversold (negative z) → positive (buy) signal.
+- **Warmup**: <60 rows → score 0.0 (neutral), same pattern as momentum.
+- **Dashboard**: CLI-only for now. `render_signal_scorecard()` is hardwired for momentum; plugging MR in would require signature changes across 3 files. Deferred until signal proves standalone value.
+**Files**: `src/signals/mean_reversion.py`, `tests/test_mean_reversion.py`, `src/cli/phase2_commands.py`
+**Tests**: 16 unit tests, all passing.
+
+### 2026-05-22 — Mean reversion backtest results: standalone signal not viable on 9-ETF universe
+**Context**: Ran 5-year walk-forward backtest (top-4, monthly rebalance, VFV benchmark) against mean reversion signal.
+**Results**:
+| Metric | Mean Reversion | Momentum baseline |
+|---|---|---|
+| Ann. return | +4.24% | +13.98% |
+| Ann. vol | 9.93% | 11.75% |
+| Sharpe | −0.027 | 0.807 |
+| Sortino | −0.038 | 1.035 |
+| Max drawdown | **−24.18%** | −15.9% |
+| Calmar | 0.175 | 0.879 |
+| Alpha vs VFV | **−6.59%** | +1.19% |
+| Beta | 0.527 | 0.685 |
+| Monthly win rate | 55.7% | — |
+| Monthly corr vs momentum | **+0.836** | — |
+**Verdict**: Standalone mean reversion fails on this universe. Three disqualifying findings:
+1. Max drawdown −24.18% **violates the 20% soft ceiling** — the system's core risk constraint.
+2. Sharpe −0.027 — the strategy barely beats cash after adjusting for vol. Momentum delivers 0.807.
+3. Monthly return correlation with momentum is 0.836 — nearly identical signal. No ensemble diversification benefit. Blending two 0.84-correlated signals produces negligible covariance reduction.
+**Why does MR struggle on this universe?**
+- 9 ETFs is too few for cross-sectional dispersion. Most are highly correlated equity ETFs (growth×4, dividend×2); the "loser" in any given month is often structurally different (bonds in a rate-hike year), not a mean-reverting equity.
+- Monthly rebalance is too slow for the 20d z-score window. Jegadeesh/Lehmann short-term reversals operate at 1-week horizons, not 1-month. By the time the monthly rebalance fires, the reversal has already resolved (or deepened into a real trend).
+- Both MR and momentum are cross-sectional ranking signals on the same 9-ticker universe. With equal portfolio construction (top-4 equal-weight), they end up holding mostly the same tickers but in different order — hence 0.836 correlation.
+**Decision**: Mean reversion signal is **complete and tested as built**, but removed from the active Phase 3 roadmap as a primary portfolio construction signal. Potential future uses:
+1. **Position sizing modifier** in the recommendation engine: very negative z_ts = caution flag before adding to a position, even if momentum is positive.
+2. **Revisit at Tier 2+** when universe expands to individual stocks — cross-sectional dispersion is much higher with 20–40 names, and stock-level reversals are well-documented.
+3. **Intraweek rebalance experiment**: if rebalance frequency drops to 5d, the 20d window may show edge.
+**No action needed**: Signal lives in the codebase, tests pass, CLI accessible via `quant signals --signal-type mean_reversion`. Not wired into the recommendation engine.
+
 ### 2026-05-20 — Phase 3 P0: Trade Recommendation Engine
 **Context**: Phase 2 complete (signals, backtester, dashboard). Building the first actionable output: trade cards that survive cost, CRA, and min-hold gates.
 **Decision**: Built signal-proportional weight engine + full recommendation pipeline. 11 design decisions resolved before a line was written (grill-me session).

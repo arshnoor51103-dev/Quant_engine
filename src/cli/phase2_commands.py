@@ -16,6 +16,7 @@ from ..data.ingest import load_universe
 from ..portfolio.model import price_series
 from ..signals.momentum import MomentumSignal, ShortTermMomentum
 from ..signals.vol_regime import VolRegimeSignal
+from ..signals.mean_reversion import MeanReversionSignal
 from ..backtest.engine import run_backtest, BacktestConfig
 
 console = Console()
@@ -26,6 +27,7 @@ def _make_signal_map() -> dict:
         "momentum": MomentumSignal(),
         "momentum_short": ShortTermMomentum(),
         "vol_regime": VolRegimeSignal(),
+        "mean_reversion": MeanReversionSignal(),
     }
 
 
@@ -33,7 +35,7 @@ def _make_signal_map() -> dict:
 
 
 def signals_command(
-    signal_type: str = typer.Option("momentum", help="Signal type: momentum, momentum_short, vol_regime"),
+    signal_type: str = typer.Option("momentum", help="Signal type: momentum, momentum_short, vol_regime, mean_reversion"),
 ) -> None:
     """Generate signal scores for the universe."""
     universe = load_universe()

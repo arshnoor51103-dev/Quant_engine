@@ -1,12 +1,12 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-20 (dashboard + CLI redesign complete).
+> Last updated: 2026-05-22 (mean reversion signal + backtest validation complete).
 
 ---
 
 ## What This System Is
 
-A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven, news-free, persistent. It generates momentum and volatility regime signals daily, validates them against walk-forward backtests, and surfaces trade recommendations. Arsh pulls the trigger manually in Wealthsimple — the system never executes.
+A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven, news-free, persistent. It generates momentum, volatility regime, and mean reversion signals daily, validates them against walk-forward backtests, and surfaces trade recommendations. Arsh pulls the trigger manually in Wealthsimple — the system never executes.
 
 **Capital**: ~$500–1000 CAD starting, $300–400/month contributions. 3–7 year horizon. 20% soft drawdown ceiling. Benchmark: VBAL (interim), VFV (stretch).
 
@@ -29,8 +29,8 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 1 — Foundation | ✅ Complete | Data pipeline, portfolio model, risk metrics, CLI |
 | Phase 2 — Signal Engine | ✅ Complete | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
 | Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
-| Phase 3 P1 — Optimizer | 🔲 Not started | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
-| Phase 3 P2 — Mean Reversion | 🔲 Not started | Z-score mean reversion signal, signal persistence to DB |
+| Phase 3 P2 — Optimizer | 🔲 Not started | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
+| Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -62,7 +62,8 @@ quant_engine/
 │   ├── signals/
 │   │   ├── base.py             ← Signal ABC + SignalResult dataclass
 │   │   ├── momentum.py         ← 12-1 month momentum (Jegadeesh-Titman 1993)
-│   │   └── vol_regime.py       ← realized vol percentile → regime classification
+│   │   ├── vol_regime.py       ← realized vol percentile → regime classification
+│   │   └── mean_reversion.py   ← regime-conditional z-score MR (Jegadeesh/Lehmann 1990)
 │   ├── backtest/
 │   │   └── engine.py           ← walk-forward backtester, BacktestConfig, BacktestResult
 │   ├── api/
@@ -74,7 +75,8 @@ quant_engine/
 ├── tests/
 │   ├── test_metrics.py         ← 11 unit tests for portfolio/metrics.py
 │   ├── test_signals.py         ← 11 unit tests for momentum + vol_regime signals
-│   └── test_recommendations.py ← 22 unit tests for Phase 3 P0 recommendation engine
+│   ├── test_recommendations.py ← 22 unit tests for Phase 3 P0 recommendation engine
+│   └── test_mean_reversion.py  ← 16 unit tests for MeanReversionSignal
 └── data/                       ← SQLite db + parquet cache (gitignored)
 ```
 
@@ -98,7 +100,7 @@ Or if installed as `quant`: `quant <command>`
 ### Phase 2 Commands
 | Command | What it does |
 |---------|-------------|
-| `quant signals --signal-type [momentum\|momentum_short\|vol_regime]` | Generate signal scores for universe. Prints ranked table + raw returns or regime metadata. |
+| `quant signals --signal-type [momentum\|momentum_short\|vol_regime\|mean_reversion]` | Generate signal scores for universe. Prints ranked table + raw returns or regime metadata. |
 | `quant backtest --signal-type X --years N --top-n N` | Walk-forward backtest. Default: momentum, 5yr, top-4. Prints metrics vs VFV benchmark. |
 | `quant dashboard [--port N]` | Launch FastAPI server at localhost:8501. Serves `/api/universe`, `/api/metrics`, `/api/signals`, `/api/status` + HTML dashboard. |
 
@@ -213,6 +215,35 @@ Regime thresholds: LOW_VOL (<25th pct) = +1.0, NORMAL (25–75th) = +0.3, HIGH_V
 
 ---
 
+### Mean Reversion Signal (2026-05-22)
+
+**Configuration**: MeanReversionSignal (20d/60d z-score, regime-conditional TS/CS), 5-year walk-forward, equal-weight top-4, monthly rebalance, VFV.TO benchmark.
+
+| Metric | Strategy | VFV Benchmark | vs Momentum |
+|--------|----------|--------------|-------------|
+| Ann. Return | +4.24% | +16.51% | −9.74pp |
+| Ann. Vol | 9.93% | — | −1.82pp |
+| Sharpe | −0.027 | 0.805 | −0.834 |
+| Sortino | −0.038 | — | −1.073 |
+| Max Drawdown | **−24.18%** | −22.19% | −8.28pp |
+| Calmar | 0.175 | — | −0.704 |
+| Alpha vs VFV | **−6.59%** | — | −7.78pp |
+| Beta | 0.527 | — | −0.158 |
+| Monthly win rate | 55.7% (34/61) | — | — |
+| Monthly corr vs momentum | **+0.836** | — | — |
+
+**Verdict: standalone mean reversion is not viable on this universe.**
+- Max drawdown −24.18% violates the 20% soft ceiling.
+- Sharpe −0.027: barely beats cash. Momentum: 0.807.
+- Alpha −6.59%: deeply negative.
+- Monthly return correlation with momentum is 0.836 — nearly the same signal, no ensemble diversification benefit.
+
+**Why it fails on 9 ETFs**: Too few tickers for cross-sectional dispersion. Monthly rebalance is too slow for the 20d z-score window (reversals resolve within 1 week). Both MR and momentum are cross-sectional ranking signals on the same universe and end up selecting mostly the same 4 tickers.
+
+**Signal status**: Code complete, tests passing, CLI accessible (`quant signals --signal-type mean_reversion`). **Not wired into the recommendation engine.** Potential value: (a) position-sizing modifier in ensemble at higher tiers, (b) revisit when universe expands to 20+ individual stocks, (c) intraweek rebalance experiment.
+
+---
+
 ## Architectural Decisions (from LEARNING.md)
 
 ### 2026-05-19 — Phase 2 components landed together
@@ -268,10 +299,11 @@ Avoid 1.5% Wealthsimple FX drag. Universe expands automatically at capital tier 
 tests/test_metrics.py           11 tests — all portfolio/metrics.py functions
 tests/test_signals.py           11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
 tests/test_recommendations.py  22 tests — combined signals, target weights, all gate types, cold-start math
+tests/test_mean_reversion.py    16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 43/43 passing as of 2026-05-20.
+**Status**: 59/59 passing as of 2026-05-22.
 
 **Known test gaps** (TODO for Phase 3 P1+):
 - Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.
@@ -312,6 +344,18 @@ tests/test_recommendations.py  22 tests — combined signals, target weights, al
 - **Broadcast**: Growth/dividend tickers get raw regime score. Stable tickers (VAB, ZAG, HSAV) get inverse (crisis = buy bonds).
 - **Reference**: Kritzman et al. (2012). *Regime Shifts: Implications for Dynamic Strategies.* Financial Analysts Journal.
 
+### MeanReversionSignal (src/signals/mean_reversion.py)
+- **Algorithm**: Regime-conditional dual-window z-score mean reversion
+- **TS component**: `z_ts = 0.5 × z_20 + 0.5 × z_60` where each `z_N` = rolling z-score of daily log returns at N days
+- **TS normalization**: `tanh(z_ts)` — smooth compression to (−1, 1) per ticker
+- **CS component**: Rank-normalize `z_ts` across all tickers at run_date → [−1, +1]
+- **Combination**: `combined = w_ts × tanh(z_ts) + w_cs × z_cs`, sign-flipped, then final rank-normalize
+- **Regime weights**: CRISIS (0.70/0.30 TS/CS) → HIGH_VOL (0.60/0.40) → NORMAL (0.50/0.50) → LOW_VOL (0.35/0.65)
+- **Sign convention**: Positive score = oversold = buy pressure (matches momentum convention)
+- **Warmup**: 60 trading days minimum; insufficient data → 0.0 neutral
+- **References**: Jegadeesh (1990), Lehmann (1990), Asness/Moskowitz/Pedersen (2013)
+- **Backtest verdict**: Standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24%, alpha −6.6%, 0.84 corr with momentum)
+
 ### Backtest Engine (src/backtest/engine.py)
 - **Method**: Walk-forward, monthly rebalance (21 trading days), equal-weight top-N by signal score
 - **Long-only**: Only holds tickers with positive signal scores (TFSA constraint)
@@ -324,11 +368,11 @@ tests/test_recommendations.py  22 tests — combined signals, target weights, al
 
 Phase 3 goal: **within-bucket weight optimization + trade recommendation engine**. Signals generate scores; optimizer converts scores to target weights; recommendation engine applies cost gate and fires trade cards.
 
-### P3.1 — Mean Reversion Signal
-- File: `src/signals/mean_reversion.py`
-- Algorithm: z-score of price vs rolling mean, with reversion confirmation
-- Math: standard z-score normalization, Bollinger-band style
-- Required before optimizer can blend momentum + MR signals
+### P3.1 — Mean Reversion Signal ✅ COMPLETE (2026-05-22)
+- File: `src/signals/mean_reversion.py` — 16 tests passing
+- Regime-conditional dual-window z-score (20d/60d), tanh TS + CS rank, sign-flip
+- **Backtest result**: standalone not viable (Sharpe −0.03, DD −24.2%, alpha −6.6%, corr 0.84 vs momentum)
+- Signal complete in codebase; not wired into recommendation engine; revisit at Tier 2+ or with intraweek rebalance
 
 ### P3.2 — Within-Bucket Optimizer
 - File: `src/portfolio/optimizer.py`
@@ -384,4 +428,4 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 
 ---
 
-*Last updated: 2026-05-19. Phase 2 complete. 20/20 tests passing. Committed at `be0a470` on `main`.*
+*Last updated: 2026-05-22. Phase 3 P1 (mean reversion signal) complete. 59/59 tests passing. Committed on `main`.*

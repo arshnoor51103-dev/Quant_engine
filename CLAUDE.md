@@ -136,7 +136,8 @@ quant_engine/
 
 **Phase 3 P0 — Trade Recommendation Engine. Complete.**
 **Dashboard + CLI redesign. Complete (2026-05-20).**
-**Phase 3 P1 — Within-Bucket Optimizer (Ledoit-Wolf). Not started.**
+**Phase 3 P1 — Mean Reversion Signal. Complete (2026-05-22). Backtest: standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24.2%, alpha −6.6%). Signal in codebase, not in recommendation engine.**
+**Phase 3 P2 — Within-Bucket Optimizer (Ledoit-Wolf). Not started.**
 
 ### Phase 3 P0 decisions locked in CLAUDE.md:
 - **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
@@ -151,4 +152,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: Phase 3 P0 complete, 2026-05-20.*
+*Last updated: Phase 3 P1 (mean reversion signal + backtest) complete, 2026-05-22.*
