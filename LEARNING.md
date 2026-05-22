@@ -19,6 +19,40 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-20 — Phase 3 P0: Trade Recommendation Engine
+**Context**: Phase 2 complete (signals, backtester, dashboard). Building the first actionable output: trade cards that survive cost, CRA, and min-hold gates.
+**Decision**: Built signal-proportional weight engine + full recommendation pipeline. 11 design decisions resolved before a line was written (grill-me session).
+**Key choices**:
+- Signal-proportional weights within buckets (no Markowitz optimizer). Optimizer added in P3.2 when NAV justifies covariance estimation precision.
+- Combined signal = momentum × max(regime_score, 0). Clamping to 0 in HIGH_VOL/CRISIS prevents sign-flip artifacts (neg × neg = pos) that would otherwise buy anti-momentum tickers in bad regimes.
+- Stable bucket uses equal weight (1/3 each). Regime does not gate stable allocation — bonds are always needed for diversification; momentum is not the right signal for fixed income selection.
+- Cost gate operates on delta (after weight assignment), not on raw signal. Gate in dollar terms: expected_return ≥ 2×spread + 0.5% floor.
+- BUY-only in P0. Sells deferred until NAV is large enough that drift correction is worth a trade slot.
+- Flat 0.05% spread proxy. spread_override hook added to universe.yaml for Tier 3+ per-ETF calibration.
+- --cash required when NAV=0. Raises clear error (not silent zero-card output). Optional when NAV>0.
+- CRA gate: warn at 20 trades, show CRA_LIMIT at 24 — pipeline always runs, Arsh decides.
+- MIN_HOLD hard gate: 14 days, from trades table. Legal boundary until professional account justified.
+- quant execute <rec_id> is atomic: updates recommendation + creates trade record in one command.
+**Files**: src/portfolio/recommendations.py, src/cli/phase3_commands.py
+**Tests**: 22 unit tests, all passing.
+
+### 2026-05-20 — Professional account trigger conditions (future decision)
+**Context**: MIN_HOLD and CRA max-trade constraints currently enforce legal boundary for TFSA.
+**Decision**: Revisit opening a non-registered/professional account when either (a) annual trade count approaches 24, or (b) NAV reaches $5k first threshold.
+**Rationale**: At sub-$5k NAV the tax sheltering of TFSA outweighs the trading flexibility of a margin account. Once NAV grows, the calculus changes.
+
+### 2026-05-20 — Phone alert pipeline: ntfy.sh for Phase 3 P2
+**Context**: Phase 3 P2 will introduce scheduled daily auto-runs that push a phone notification when a signal fires or a trade card is ready. Options evaluated: Telegram bot, ntfy.sh, email.
+**Decision**: ntfy.sh for one-way push alerts. Revisit Telegram only if/when two-way interactive trade approval (inline buttons, `/approve trade_id`) is needed.
+**Rationale**: ntfy.sh is a single HTTP POST — no bot creation, no token, no chat_id storage, no rate-limit games. Free public instance is sufficient for now; self-hostable on a $5 VPS later if privacy matters. Both ntfy.sh and Telegram are HTTP under the hood, so the alert dispatch module can add a second backend without a rewrite. Email ruled out for delivery latency.
+**Revisit when**: Interactive trade approval is needed (Phase 4+).
+
+### 2026-05-20 — Covariance estimation: Ledoit-Wolf shrinkage, not raw sample covariance
+**Context**: Phase 3 optimizer needs a covariance matrix. The naive choice is the sample covariance of daily returns.
+**Decision**: Use `sklearn.covariance.LedoitWolf` with constant-correlation target throughout the optimizer. Sample covariance fallback only if N ≤ 5 (degenerate case). Re-evaluate at Tier 4 if N approaches 50+ (may need Ledoit-Wolf 2020 non-linear shrinkage at that scale).
+**Rationale**: Sample covariance becomes unreliable as N (assets) approaches T (observations). At Tier 1 (9 ETFs × 1260 obs) the ratio is safe, but at Tier 2/3 (20–40 names) estimation error dominates. Markowitz puts its biggest bets on the most extreme covariance entries — exactly the ones that are most noise-contaminated. Ledoit-Wolf pulls extreme correlations toward a structured target with analytically computed shrinkage intensity; no hyperparameter tuning, no cross-validation. Building Phase 3 with raw sample covariance would produce a working Tier 1 backtest and a numerical instability rewrite at Tier 2.
+**Implementation note**: `sklearn.covariance.LedoitWolf().fit(returns).covariance_` is 4 lines. `skfolio.moments.LedoitWolf` adds a force-positive-definite option worth using in the optimizer.
+
 ### 2026-05-19 — Phase 2: Signal engine + backtesting + API dashboard
 **Context**: Phase 1 complete (data pipeline, metrics, CLI). Moving to signal generation.
 **Decision**: Built three components simultaneously: (1) momentum + vol regime signals, (2) walk-forward backtesting framework, (3) FastAPI server for web dashboard.
@@ -114,10 +148,12 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 > Things we don't know yet. Triaged when answered (move to Decisions log).
 
 ### 2026-05-17 — How do we estimate covariance with only 1–2 years of history before relying on backtest signals?
-Shrinkage estimators (Ledoit-Wolf)? Just trust 5+ years of ETF history?
+~~Shrinkage estimators (Ledoit-Wolf)? Just trust 5+ years of ETF history?~~
+**Answered 2026-05-20** → See Decision: "Covariance estimation: Ledoit-Wolf shrinkage, not raw sample covariance."
 
 ### 2026-05-17 — Phone alert pipeline: Telegram bot vs ntfy.sh vs email?
-Telegram has bot API + push notifications free. ntfy.sh is dead simple. Email has delivery latency. Decide before Phase 2.
+~~Telegram has bot API + push notifications free. ntfy.sh is dead simple. Email has delivery latency. Decide before Phase 2.~~
+**Answered 2026-05-20** → See Decision: "Phone alert pipeline: ntfy.sh for Phase 3 P2."
 
 ### 2026-05-17 — Regime detection method: hidden Markov model, simple vol thresholds, or VIX-based?
 Test all three on backtest in Phase 2.
@@ -180,4 +216,23 @@ Metrics module confirmed running. Ready for first manual buy via `trade` command
 
 ---
 
-*Last edited: 2026-05-17, Phase 1 scaffold creation.*
+*Last edited: 2026-05-19, Bug #6 fix.*
+
+---
+
+**Mistake & Correction — 2026-05-19**
+
+**Bug #6: VolRegimeSignal silently degraded to regime=unknown due to insufficient lookback**
+
+`VolRegimeSignal.lookback_days` = 1291 (history_window 1260 + vol_window 21 + padding 10). Two callers loaded prices with a hardcoded 1260-day window:
+- `src/api/server.py` `/api/signals` endpoint called `_load_prices()` with no argument, using the 1260 default.
+- `src/portfolio/model.py` `price_series()` default was `252*5 = 1260`.
+
+The signal's `generate()` guard (`len(prices[benchmark]) < self.lookback_days`) silently returned `regime=unknown, scores=0.0` — no exception, no warning to the caller.
+
+**Fix:**
+1. `server.py` `/api/signals`: instantiate the signal first, then call `_load_prices(sig.lookback_days)`.
+2. `model.py`: bumped `price_series()` default from `252*5` to `252*6` (1512 days) as a safety margin.
+3. `phase2_commands.py`: removed the redundant `max(..., 1260)` floor — `sig.lookback_days` is already the correct minimum.
+
+**Lesson:** Silent neutral fallback (`score=0.0`) on insufficient data is correct behavior for signal integrity, but callers must actively use `sig.lookback_days` to size the fetch window. Never hardcode a lookback constant that could silently undercut a signal's required history.

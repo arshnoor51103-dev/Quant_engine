@@ -149,7 +149,3 @@ class ShortTermMomentum(MomentumSignal):
         super().__init__(formation_days=63, skip_days=21)
 
 
-class LongTermMomentum(MomentumSignal):
-    """18-1 month momentum — slower, smoother."""
-    def __init__(self):
-        super().__init__(formation_days=378, skip_days=21)

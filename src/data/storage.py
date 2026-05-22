@@ -64,8 +64,17 @@ CREATE TABLE IF NOT EXISTS recommendations (
     expected_ret  REAL,
     cost_estimate REAL,
     rationale     TEXT,
-    status        TEXT NOT NULL DEFAULT 'pending'
+    status        TEXT NOT NULL DEFAULT 'pending',
+    fill_price    REAL,
+    fill_units    REAL,
+    executed_at   TIMESTAMP,
+    bucket        TEXT,
+    gate_status   TEXT,
+    combined_signal REAL,
+    run_id        TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_trades_ticker_side ON trades(ticker, side, trade_date);
+CREATE INDEX IF NOT EXISTS idx_recs_status ON recommendations(status, generated_at);
 
 CREATE TABLE IF NOT EXISTS metrics_snapshots (
     snapshot_date    DATE NOT NULL,
@@ -88,18 +97,22 @@ CREATE TABLE IF NOT EXISTS run_log (
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     """Open a connection with row factory + foreign keys on."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
+_migrated: set[Path] = set()
+
+
 def initialize(db_path: Path = DB_PATH) -> None:
     """Create the schema if not present. Safe to call repeatedly."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
         conn.commit()
+    migrate_recommendations_v2(db_path)
 
 
 def upsert_prices(rows: Iterable[dict], db_path: Path = DB_PATH) -> int:
@@ -240,3 +253,161 @@ def log(component: str, level: str, message: str, db_path: Path = DB_PATH) -> No
             (component, level, message),
         )
         conn.commit()
+
+
+def migrate_recommendations_v2(db_path: Path = DB_PATH) -> None:
+    """
+    Add Phase 3 P0 columns to recommendations table if not already present.
+
+    Safe to call on every startup — checks column existence before altering.
+    New columns: fill_price, fill_units, executed_at, bucket, gate_status,
+                 combined_signal, run_id.
+    """
+    global _migrated
+    if db_path in _migrated:
+        return
+    new_cols = [
+        ("fill_price",      "REAL"),
+        ("fill_units",      "REAL"),
+        ("executed_at",     "TIMESTAMP"),
+        ("bucket",          "TEXT"),
+        ("gate_status",     "TEXT"),
+        ("combined_signal", "REAL"),
+        ("run_id",          "TEXT"),
+    ]
+    with get_connection(db_path) as conn:
+        existing = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
+        }
+        for col_name, col_type in new_cols:
+            if col_name not in existing:
+                conn.execute(
+                    f"ALTER TABLE recommendations ADD COLUMN {col_name} {col_type};"
+                )
+        conn.commit()
+    _migrated.add(db_path)
+
+
+def save_recommendation(
+    ticker: str,
+    action: str,
+    bucket: str,
+    target_weight: float,
+    combined_signal: float,
+    expected_ret: float | None,
+    cost_estimate: float | None,
+    gate_status: str,
+    rationale: str | None,
+    run_id: str,
+    db_path: Path = DB_PATH,
+) -> int:
+    """
+    Persist a single trade card to the recommendations table.
+
+    Returns the new recommendation id.
+    """
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO recommendations
+                (ticker, action, bucket, target_weight, combined_signal,
+                 expected_ret, cost_estimate, gate_status, rationale, run_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending');
+            """,
+            (
+                ticker, action, bucket, target_weight, combined_signal,
+                expected_ret, cost_estimate, gate_status, rationale, run_id,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def mark_recommendation_executed(
+    rec_id: int,
+    fill_price: float,
+    fill_units: float,
+    db_path: Path = DB_PATH,
+) -> None:
+    """Update recommendation status to executed with actual fill details."""
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE recommendations
+            SET status = 'executed',
+                fill_price = ?,
+                fill_units = ?,
+                executed_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (fill_price, fill_units, rec_id),
+        )
+        conn.commit()
+
+
+def mark_recommendation_skipped(rec_id: int, db_path: Path = DB_PATH) -> None:
+    """Update recommendation status to skipped."""
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE recommendations SET status = 'skipped' WHERE id = ?;",
+            (rec_id,),
+        )
+        conn.commit()
+
+
+def get_recommendation_by_id(rec_id: int, db_path: Path = DB_PATH) -> dict | None:
+    """Return a single recommendation row as a dict, or None if not found."""
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM recommendations WHERE id = ?;", (rec_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_pending_recommendations(db_path: Path = DB_PATH) -> list[dict]:
+    """Return all pending recommendation rows ordered by generated_at desc."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM recommendations WHERE status = 'pending' ORDER BY generated_at DESC;"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_annual_trade_count(year: int | None = None, db_path: Path = DB_PATH) -> int:
+    """
+    Count executed trades (rows in trades table) for a given calendar year.
+
+    Defaults to the current year. CRA cares about executed trades,
+    not pending recommendations.
+    """
+    target_year = str(year or datetime.now().year)
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM trades WHERE strftime('%Y', trade_date) = ?;",
+            (target_year,),
+        ).fetchone()
+    return row["cnt"] if row else 0
+
+
+def get_last_buy_date(ticker: str, db_path: Path = DB_PATH) -> date | None:
+    """
+    Return the most recent BUY trade date for a ticker, or None.
+
+    Used to enforce min_holding_days before recommending adding to a position.
+    """
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT MAX(trade_date) AS d FROM trades WHERE ticker = ? AND side = 'BUY';",
+            (ticker,),
+        ).fetchone()
+    return date.fromisoformat(row["d"]) if row and row["d"] else None
+
+
+def get_all_last_buy_dates(db_path: Path = DB_PATH) -> dict[str, date]:
+    """Single query for most recent BUY date per ticker. Replaces per-ticker get_last_buy_date loop."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT ticker, MAX(trade_date) AS d FROM trades WHERE side = 'BUY' GROUP BY ticker;"
+        ).fetchall()
+    return {r["ticker"]: date.fromisoformat(r["d"]) for r in rows if r["d"]}

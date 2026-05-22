@@ -1,6 +1,6 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-19 (end of Phase 2).
+> Last updated: 2026-05-20 (dashboard + CLI redesign complete).
 
 ---
 
@@ -28,8 +28,10 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 |-------|--------|-----------------|
 | Phase 1 — Foundation | ✅ Complete | Data pipeline, portfolio model, risk metrics, CLI |
 | Phase 2 — Signal Engine | ✅ Complete | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
-| Phase 3 — Optimizer | 🔲 Not started | Within-bucket weight optimization, mean reversion signal, trade recommendations |
-| Phase 4 — Automation | 🔲 Not started | Phone alerts, scheduled daily runs, signal persistence to DB |
+| Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
+| Phase 3 P1 — Optimizer | 🔲 Not started | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
+| Phase 3 P2 — Mean Reversion | 🔲 Not started | Z-score mean reversion signal, signal persistence to DB |
+| Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
 
@@ -47,15 +49,16 @@ quant_engine/
 │   ├── PHASE_1_ROADMAP.md
 │   └── ARCHITECTURE.md
 ├── config/
-│   ├── portfolio.yaml          ← buckets, tiers, risk config, trade thresholds
-│   └── universe.yaml           ← 9 ETF definitions with metadata
+│   ├── portfolio.yaml          ← buckets, tiers, risk config, trade thresholds + spread_proxy/anchor_return
+│   └── universe.yaml           ← 9 ETF definitions with metadata + spread_override hook
 ├── src/
 │   ├── data/
 │   │   ├── ingest.py           ← yfinance → SQLite, incremental OHLCV pull
-│   │   └── storage.py          ← SQLite schema + helpers (6 tables)
+│   │   └── storage.py          ← SQLite schema + helpers; Phase 3 adds recommendation CRUD
 │   ├── portfolio/
 │   │   ├── model.py            ← holdings, NAV, bucket allocation, price_series
-│   │   └── metrics.py          ← Sharpe, Sortino, Calmar, max DD, beta, alpha, rolling
+│   │   ├── metrics.py          ← Sharpe, Sortino, Calmar, max DD, beta, alpha, rolling
+│   │   └── recommendations.py  ← Phase 3 P0: combined signals, target weights, trade cards
 │   ├── signals/
 │   │   ├── base.py             ← Signal ABC + SignalResult dataclass
 │   │   ├── momentum.py         ← 12-1 month momentum (Jegadeesh-Titman 1993)
@@ -65,11 +68,13 @@ quant_engine/
 │   ├── api/
 │   │   └── server.py           ← FastAPI server, 5 REST endpoints + HTML dashboard
 │   └── cli/
-│       ├── main.py             ← typer app, Phase 1 commands
-│       └── phase2_commands.py  ← signals, backtest, dashboard commands
+│       ├── main.py             ← typer app, all commands registered
+│       ├── phase2_commands.py  ← signals, backtest, dashboard commands
+│       └── phase3_commands.py  ← recommend, execute, pending, skip commands
 ├── tests/
 │   ├── test_metrics.py         ← 11 unit tests for portfolio/metrics.py
-│   └── test_signals.py         ← 9 unit tests for momentum signal
+│   ├── test_signals.py         ← 11 unit tests for momentum + vol_regime signals
+│   └── test_recommendations.py ← 22 unit tests for Phase 3 P0 recommendation engine
 └── data/                       ← SQLite db + parquet cache (gitignored)
 ```
 
@@ -96,6 +101,14 @@ Or if installed as `quant`: `quant <command>`
 | `quant signals --signal-type [momentum\|momentum_short\|vol_regime]` | Generate signal scores for universe. Prints ranked table + raw returns or regime metadata. |
 | `quant backtest --signal-type X --years N --top-n N` | Walk-forward backtest. Default: momentum, 5yr, top-4. Prints metrics vs VFV benchmark. |
 | `quant dashboard [--port N]` | Launch FastAPI server at localhost:8501. Serves `/api/universe`, `/api/metrics`, `/api/signals`, `/api/status` + HTML dashboard. |
+
+### Phase 3 P0 Commands
+| Command | What it does |
+|---------|-------------|
+| `quant recommend [--cash N] [--save]` | Run full recommendation pipeline. Prints trade cards with gate status. `--cash` required when NAV=0. `--save` persists cards to DB and assigns rec IDs. |
+| `quant execute <ID> --price X --units Y [--date YYYY-MM-DD]` | Mark recommendation as executed. Atomically updates rec status + creates trade record with actual fill. |
+| `quant pending` | List all pending (unsaved/unexecuted) recommendations with rec IDs. |
+| `quant skip <ID>` | Mark a pending recommendation as skipped (not executed). |
 
 **Windows note**: Set `$env:PYTHONUTF8 = "1"` before running CLI commands or the Unicode bar characters crash the console. Example:
 ```powershell
@@ -252,18 +265,18 @@ Avoid 1.5% Wealthsimple FX drag. Universe expands automatically at capital tier 
 ## Test Suite
 
 ```
-tests/test_metrics.py    11 tests — all portfolio/metrics.py functions
-tests/test_signals.py     9 tests — MomentumSignal, ShortTermMomentum, edge cases
+tests/test_metrics.py           11 tests — all portfolio/metrics.py functions
+tests/test_signals.py           11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
+tests/test_recommendations.py  22 tests — combined signals, target weights, all gate types, cold-start math
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 20/20 passing as of 2026-05-19.
+**Status**: 43/43 passing as of 2026-05-20.
 
-**Known test gaps** (TODO for Phase 3):
+**Known test gaps** (TODO for Phase 3 P1+):
 - Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.
-- No tests for `VolRegimeSignal`.
 - No tests for `BacktestResult.summary_str()`.
-- No integration test covering full pipeline: fetch → signal → backtest.
+- No integration test covering full pipeline: fetch → signal → backtest → recommend.
 
 ---
 

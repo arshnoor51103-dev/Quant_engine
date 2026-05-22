@@ -20,6 +20,7 @@ statsmodels>=0.14.0
 # API + dashboard
 fastapi>=0.111.0
 uvicorn>=0.30.0
+streamlit>=1.35.0
 
 # Testing
 pytest>=8.0.0

@@ -45,6 +45,8 @@ REGIME_SCORES = {
     Regime.CRISIS: -1.0,
 }
 
+STABLE_TICKERS: frozenset[str] = frozenset({"VAB.TO", "ZAG.TO", "HSAV.TO"})
+
 
 class VolRegimeSignal(Signal):
     """
@@ -135,9 +137,8 @@ class VolRegimeSignal(Signal):
         # stable tickers get inverted (risk-off = positive for bonds)
         # This is a simplification — Phase 3 optimizer will handle this more precisely.
         scores = {}
-        stable_tickers = {"VAB.TO", "ZAG.TO", "HSAV.TO"}
         for ticker in prices:
-            if ticker in stable_tickers:
+            if ticker in STABLE_TICKERS:
                 scores[ticker] = -base_score  # inverse: crisis = buy bonds
             else:
                 scores[ticker] = base_score

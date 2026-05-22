@@ -31,11 +31,6 @@ def daily_returns(prices: pd.Series) -> pd.Series:
     return prices.pct_change().dropna()
 
 
-def log_returns(prices: pd.Series) -> pd.Series:
-    """Log returns: r_t = ln(P_t / P_{t-1}). Drops first NaN."""
-    return np.log(prices / prices.shift(1)).dropna()
-
-
 def annualized_return(returns: pd.Series) -> float:
     """
     Geometric annualized return.
@@ -170,23 +165,6 @@ def alpha(
     ar_asset = annualized_return(asset_returns)
     ar_bench = annualized_return(benchmark_returns)
     return float(ar_asset - (risk_free + b * (ar_bench - risk_free)))
-
-
-def rolling_metric(
-    returns: pd.Series, window_days: int, fn
-) -> pd.Series:
-    """
-    Generic rolling-window metric calculator.
-
-    fn must accept a pd.Series and return a float.
-
-    Example:
-        rolling_sharpe = rolling_metric(rets, 63, sharpe_ratio)  # 3-month rolling
-    """
-    return returns.rolling(window=window_days).apply(
-        lambda w: fn(pd.Series(w)) if len(w) == window_days else np.nan,
-        raw=True,
-    )
 
 
 def summary(returns: pd.Series, benchmark: pd.Series | None = None,

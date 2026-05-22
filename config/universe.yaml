@@ -11,6 +11,7 @@ universe:
     region: US
     mer: 0.0009   # 9bps
     notes: Core US large-cap exposure, unhedged
+    spread_override: null  # falls back to flat 0.05% proxy; set in bps at Tier 3+
 
   - ticker: XIC.TO
     name: iShares Core S&P/TSX Capped Composite Index ETF
@@ -19,6 +20,7 @@ universe:
     region: CA
     mer: 0.0006
     notes: TSX broad market
+    spread_override: null
 
   - ticker: HXQ.TO
     name: Horizons NASDAQ-100 Index ETF
@@ -27,6 +29,7 @@ universe:
     region: US
     mer: 0.0028
     notes: Total return swap structure — tax-efficient in TFSA (no distributions)
+    spread_override: null
 
   - ticker: XEF.TO
     name: iShares Core MSCI EAFE IMI Index ETF
@@ -35,6 +38,7 @@ universe:
     region: DEV_EX_NA
     mer: 0.0022
     notes: Developed markets ex North America
+    spread_override: null
 
   # ─── STABLE BUCKET ───────────────────────────────────────────
   - ticker: VAB.TO
@@ -44,6 +48,7 @@ universe:
     region: CA
     mer: 0.0009
     notes: Broad Canadian bonds, intermediate duration
+    spread_override: null
 
   - ticker: ZAG.TO
     name: BMO Aggregate Bond Index ETF
@@ -52,6 +57,7 @@ universe:
     region: CA
     mer: 0.0009
     notes: Alternative to VAB, slightly different holdings
+    spread_override: null
 
   - ticker: HSAV.TO
     name: Horizons High Interest Savings ETF
@@ -60,6 +66,7 @@ universe:
     region: CA
     mer: 0.0011
     notes: HISA wrapper, tax-efficient via swap structure
+    spread_override: null
 
   # ─── DIVIDEND BUCKET ─────────────────────────────────────────
   - ticker: CDZ.TO
@@ -69,6 +76,7 @@ universe:
     region: CA
     mer: 0.0066
     notes: Companies with 5+ years of dividend growth
+    spread_override: null
 
   - ticker: VDY.TO
     name: Vanguard FTSE Canadian High Dividend Yield Index ETF
@@ -77,8 +85,10 @@ universe:
     region: CA
     mer: 0.0022
     notes: Bank/energy heavy, low MER alternative to CDZ
+    spread_override: null
 
 # ─── DATA SOURCE ─────────────────────────────────────────────
+# RESERVED: wired up in Phase X — do not remove.
 data_source:
   provider: yfinance
   history_years: 20
@@ -86,6 +96,7 @@ data_source:
   fields: [Open, High, Low, Close, Adj Close, Volume]
 
 # ─── FUTURE TIERS (gated, not active) ────────────────────────
+# RESERVED: wired up in Phase X — do not remove.
 future_tiers:
   tier_2_unlock_nav: 10000
   tier_3_unlock_nav: 25000

@@ -21,6 +21,14 @@ from ..backtest.engine import run_backtest, BacktestConfig
 console = Console()
 
 
+def _make_signal_map() -> dict:
+    return {
+        "momentum": MomentumSignal(),
+        "momentum_short": ShortTermMomentum(),
+        "vol_regime": VolRegimeSignal(),
+    }
+
+
 # ─── ADD THESE TO THE EXISTING app IN main.py ─────────────────────
 
 
@@ -32,11 +40,7 @@ def signals_command(
     tickers = [a["ticker"] for a in universe]
 
     # Select signal first so we know the required lookback
-    signal_map = {
-        "momentum": MomentumSignal(),
-        "momentum_short": ShortTermMomentum(),
-        "vol_regime": VolRegimeSignal(),
-    }
+    signal_map = _make_signal_map()
     if signal_type not in signal_map:
         console.print(f"[red]Unknown signal: {signal_type}. Options: {list(signal_map.keys())}[/red]")
         return
@@ -44,7 +48,7 @@ def signals_command(
     sig = signal_map[signal_type]
 
     # Load enough history to satisfy the signal's lookback requirement
-    lookback = max(sig.lookback_days, 1260)
+    lookback = sig.lookback_days
     prices = {}
     for t in tickers:
         ps = price_series(t, lookback_days=lookback)
@@ -108,11 +112,7 @@ def backtest_command(
             prices[t] = ps
 
     # Select signal
-    signal_map = {
-        "momentum": MomentumSignal(),
-        "momentum_short": ShortTermMomentum(),
-        "vol_regime": VolRegimeSignal(),
-    }
+    signal_map = _make_signal_map()
     sig = signal_map.get(signal_type)
     if not sig:
         console.print(f"[red]Unknown signal: {signal_type}[/red]")
@@ -154,10 +154,7 @@ def backtest_command(
         b = f"{bench_val:+.4f}" if isinstance(bench_val, float) else "—"
         # Color: green if strategy beats benchmark
         if isinstance(strat_val, float) and isinstance(bench_val, float):
-            if key == "max_drawdown":
-                color = "green" if strat_val > bench_val else "red"
-            else:
-                color = "green" if strat_val > bench_val else "red"
+            color = "green" if strat_val > bench_val else "red"
             table.add_row(label, f"[{color}]{s}[/{color}]", b)
         else:
             table.add_row(label, s, b)

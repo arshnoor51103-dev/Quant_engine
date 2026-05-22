@@ -27,6 +27,12 @@ from ..portfolio.model import (
 )
 from ..portfolio import metrics as m
 from .phase2_commands import signals_command, backtest_command, dashboard_command
+from .phase3_commands import (
+    recommend_command,
+    execute_command,
+    pending_command,
+    skip_command,
+)
 
 app = typer.Typer(add_completion=False, help="Quant Engine CLI")
 console = Console()
@@ -84,7 +90,7 @@ def universe() -> None:
 def status() -> None:
     """Portfolio state, NAV, bucket drift."""
     holdings = get_holdings()
-    total = nav()
+    total = nav(holdings)
     console.print(f"\n[bold]Portfolio NAV:[/bold] ${total:,.2f} CAD\n")
 
     if not holdings:
@@ -107,7 +113,7 @@ def status() -> None:
     b_table = Table(title="Bucket Allocation vs Target")
     for c in ("Bucket", "Target", "Actual", "Drift", "Needs rebalance"):
         b_table.add_column(c)
-    for b, info in bucket_allocation().items():
+    for b, info in bucket_allocation(holdings).items():
         b_table.add_row(
             b,
             f"{info['target']*100:.1f}%",
@@ -204,6 +210,10 @@ def trade(
 app.command(name="signals")(signals_command)
 app.command(name="backtest")(backtest_command)
 app.command(name="dashboard")(dashboard_command)
+app.command(name="recommend")(recommend_command)
+app.command(name="execute")(execute_command)
+app.command(name="pending")(pending_command)
+app.command(name="skip")(skip_command)
 
 
 if __name__ == "__main__":

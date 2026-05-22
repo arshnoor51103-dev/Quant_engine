@@ -134,8 +134,16 @@ quant_engine/
 
 ## Current Phase
 
-**Phase 2 — Signal Engine. Complete.**
-**Phase 3 — Optimizer + Trade Recommendations. Not started.**
+**Phase 3 P0 — Trade Recommendation Engine. Complete.**
+**Dashboard + CLI redesign. Complete (2026-05-20).**
+**Phase 3 P1 — Within-Bucket Optimizer (Ledoit-Wolf). Not started.**
+
+### Phase 3 P0 decisions locked in CLAUDE.md:
+- **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
+- **Cost gate order**: Compute target weights first → diff holdings → gate each resulting trade. Gate is in dollar terms (delta × expected_return ≥ delta × cost_threshold).
+- **BUY-only in P0**: No SELL recommendations until NAV is large enough that drift correction justifies a trade slot.
+- **Combined signal**: `momentum × max(regime_score, 0)` for growth/dividend. Stable bucket uses equal weight (1/3 each) — regime does not gate bond allocation.
+- **CRA discipline**: Hard MIN_HOLD gate (14 days). Max 24 trades/year from `trades` table. Warn at 20. Legal boundary holds until professional account justified (trigger: 24 trades hit OR NAV ≥ $5k).
 
 For a full picture of what's built, what's tested, all architectural decisions, all bugs found, current signal readings, backtest results, and the Phase 3 roadmap — read:
 
@@ -143,4 +151,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: Phase 2 complete, 2026-05-19.*
+*Last updated: Phase 3 P0 complete, 2026-05-20.*

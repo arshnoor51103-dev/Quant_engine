@@ -21,8 +21,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Protocol
-
 import numpy as np
 import pandas as pd
 
@@ -51,23 +49,6 @@ class BacktestResult:
     benchmark_returns: pd.Series          # daily returns of benchmark
     rebalance_log: list[dict]             # what was held each period
     metrics: dict                         # sharpe, sortino, max_dd, alpha, etc.
-
-    def summary_str(self) -> str:
-        """Formatted summary for CLI output."""
-        lines = [
-            f"=== BACKTEST: {self.signal_name} ===",
-            f"Period: {self.config.start_date} → {self.config.end_date}",
-            f"Rebalance: every {self.config.rebalance_freq_days} days",
-            f"Top-N: {self.config.top_n}",
-            "",
-        ]
-        for k, v in self.metrics.items():
-            if isinstance(v, float):
-                lines.append(f"  {k:25s}: {v:+.4f}")
-            else:
-                lines.append(f"  {k:25s}: {v}")
-        return "\n".join(lines)
-
 
 def run_backtest(
     signal: Signal,

@@ -1,0 +1,312 @@
+"""
+Trade Recommendation Engine (Phase 3 P0).
+
+Pipeline:
+  1. Compute combined signal per ticker: momentum × max(regime_score, 0)
+     Stable tickers use equal weight (regime does not gate stable allocation in P0).
+  2. Compute signal-proportional target weights within each bucket.
+  3. Diff target weights vs current holdings to get per-ticker delta in dollars.
+  4. Apply gates to each positive-delta ticker:
+       - Signal gate:   combined <= 0 → SKIP
+       - Cost gate:     expected_return < 2×spread + profit_floor → SKIP_COST
+       - Min-hold gate: last buy < min_holding_days ago → MIN_HOLD
+       - CRA gate:      warn at 20 trades, CRA_LIMIT at 24 (still shown, never suppressed)
+  5. Return sorted list of TradeCard objects.
+
+Design decisions (2026-05-20, LEARNING.md):
+  - BUY-only in P0; sells deferred until NAV justifies trade-slot cost.
+  - Signal-proportional weights (no Markowitz optimizer) — added in P3.2.
+  - Stable bucket always allocated at equal weight; regime gates growth/dividend only.
+  - Flat 0.05% spread proxy; spread_override hook in universe.yaml for Tier 3+.
+  - Expected return = combined_score × anchor_return_annualized (backtest anchor).
+  - --cash required when NAV=0; optional addition to existing NAV when NAV>0.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from enum import Enum
+
+from ..signals.base import SignalResult
+from ..signals.vol_regime import Regime, REGIME_SCORES, STABLE_TICKERS
+from .model import Holding
+
+
+class GateStatus(str, Enum):
+    PASS = "PASS"
+    CRA_WARN = "CRA_WARN"       # 20-23 trades used — BUY still recommended
+    CRA_LIMIT = "CRA_LIMIT"     # 24 trades used — shown but flagged, Arsh decides
+    SKIP_SIGNAL = "SKIP"        # combined signal <= 0
+    SKIP_COST = "SKIP_COST"     # expected return below cost threshold
+    MIN_HOLD = "MIN_HOLD"       # bought too recently (< min_holding_days)
+    OVERWEIGHT = "OVERWEIGHT"   # bucket above tolerance — no additional buy
+
+
+@dataclass
+class TradeCard:
+    """A single trade recommendation card."""
+    ticker: str
+    bucket: str
+    action: str                       # "BUY" | "HOLD" | "WARN" | "SKIP"
+    units: float | None               # units to buy (fractional, Wealthsimple-compatible)
+    est_price: float | None           # latest close price in CAD
+    delta_dollars: float | None       # target_value - current_value
+    combined_signal: float            # momentum × clamped_regime (or 1/n for stable)
+    expected_return_pct: float | None # annualized, decimal (0.035 = 3.5%)
+    gate_status: GateStatus
+    gate_reason: str | None = None
+    cost_estimate: float | None = None
+    rec_id: int | None = None         # set after DB persist
+
+
+def _clamped_regime_score(regime_result: SignalResult) -> float:
+    """
+    Extract base regime score, clamped to [0, +inf].
+
+    Clamping to 0 in HIGH_VOL/CRISIS suppresses all growth/dividend buys
+    without creating spurious signals from negative × negative momentum.
+    """
+    meta = regime_result.metadata or {}
+    regime_str = meta.get("regime", "unknown")
+    try:
+        base = REGIME_SCORES[Regime(regime_str)]
+    except (ValueError, KeyError):
+        base = REGIME_SCORES[Regime.NORMAL]
+    return max(base, 0.0)
+
+
+def compute_combined_scores(
+    momentum_result: SignalResult,
+    regime_result: SignalResult,
+) -> dict[str, float]:
+    """
+    Combined signal score per ticker.
+
+    Growth/dividend: momentum × max(base_regime_score, 0)
+      Clamping to 0 in HIGH_VOL/CRISIS suppresses buys without sign-flip artifacts.
+    Stable: 1/n_stable (equal weight, always positive — regime does not gate bonds in P0).
+
+    Reference: Phase 3 P0 design decision, LEARNING.md 2026-05-20.
+    """
+    clamped = _clamped_regime_score(regime_result)
+    n_stable = len(STABLE_TICKERS)
+    combined: dict[str, float] = {}
+    for ticker, mom in momentum_result.scores.items():
+        if ticker in STABLE_TICKERS:
+            combined[ticker] = 1.0 / n_stable
+        else:
+            combined[ticker] = mom * clamped
+    return combined
+
+
+def compute_target_weights(
+    combined_scores: dict[str, float],
+    bucket_config: dict,
+    universe_map: dict[str, dict],
+) -> dict[str, float]:
+    """
+    Signal-proportional target weights within each bucket.
+
+    Within each bucket, only tickers with combined_score > 0 receive weight,
+    normalized to sum to the bucket's target allocation. If no ticker in a
+    bucket is positive, that bucket's capital stays as cash (undeployed).
+
+    Returns portfolio-level target weight per ticker (sum <= 1.0).
+    """
+    buckets: dict[str, list[str]] = {b: [] for b in bucket_config}
+    for ticker, meta in universe_map.items():
+        b = meta.get("bucket", "unknown")
+        if b in buckets:
+            buckets[b].append(ticker)
+
+    target_weights: dict[str, float] = {}
+    for bucket_name, tickers in buckets.items():
+        bucket_target = bucket_config[bucket_name]["target"]
+        positive = {
+            t: combined_scores.get(t, 0.0)
+            for t in tickers
+            if combined_scores.get(t, 0.0) > 0.0
+        }
+        score_sum = sum(positive.values())
+        for t in tickers:
+            if t in positive and score_sum > 0.0:
+                target_weights[t] = (positive[t] / score_sum) * bucket_target
+            else:
+                target_weights[t] = 0.0
+
+    return target_weights
+
+
+def generate_trade_cards(
+    momentum_result: SignalResult,
+    regime_result: SignalResult,
+    holdings: list[Holding],
+    portfolio_config: dict,
+    universe_map: dict[str, dict],
+    portfolio_nav: float,
+    cash: float,
+    annual_trade_count: int,
+    last_buy_dates: dict[str, date | None],
+    latest_prices: dict[str, float],
+) -> list[TradeCard]:
+    """
+    Full recommendation pipeline. Returns one TradeCard per universe ticker.
+
+    Args:
+        momentum_result:    output of MomentumSignal.generate()
+        regime_result:      output of VolRegimeSignal.generate()
+        holdings:           current holdings from get_holdings()
+        portfolio_config:   loaded portfolio.yaml
+        universe_map:       {ticker: metadata} from universe.yaml
+        portfolio_nav:      current portfolio market value in CAD
+        cash:               new cash to deploy in CAD (0.0 for rebalance-only run)
+        annual_trade_count: executed trades in current calendar year (from trades table)
+        last_buy_dates:     {ticker: date_of_last_buy_or_None}
+        latest_prices:      {ticker: latest_close_price} for all universe tickers
+
+    Raises:
+        ValueError: if portfolio_nav == 0 and cash == 0 (no capital to work with).
+    """
+    if portfolio_nav == 0.0 and cash == 0.0:
+        raise ValueError(
+            "NAV is $0.00 and no --cash amount provided. "
+            "Use --cash to specify deployable capital (e.g. --cash 800)."
+        )
+
+    trading = portfolio_config["trading"]
+    alloc_cfg = portfolio_config["allocation"]
+
+    spread_proxy: float = trading.get("spread_proxy", 0.0005)
+    anchor_return: float = trading.get("anchor_return_annualized", 0.1398)
+    profit_floor: float = trading.get("profit_floor", 0.005)
+    multiplier: float = trading.get("trade_threshold_multiplier", 2.0)
+    max_trades: int = int(trading.get("max_trades_per_year", 24))
+    cra_warn: int = int(trading.get("cra_warn_threshold", 20))
+    min_hold: int = int(trading.get("min_holding_days", 14))
+
+    cost_threshold = multiplier * spread_proxy + profit_floor
+    total_capital = portfolio_nav + cash
+
+    combined_scores = compute_combined_scores(momentum_result, regime_result)
+    target_weights = compute_target_weights(combined_scores, alloc_cfg, universe_map)
+
+    holdings_map: dict[str, Holding] = {h.ticker: h for h in holdings}
+
+    # Bucket-level actual allocation for OVERWEIGHT detection
+    bucket_actual: dict[str, float] = {b: 0.0 for b in alloc_cfg}
+    if total_capital > 0:
+        for ticker, h in holdings_map.items():
+            b = universe_map.get(ticker, {}).get("bucket", "unknown")
+            if b in bucket_actual:
+                bucket_actual[b] += h.market_value / total_capital
+
+    run_date = momentum_result.run_date
+    cards: list[TradeCard] = []
+
+    for ticker, target_weight in target_weights.items():
+        meta = universe_map[ticker]
+        bucket = meta.get("bucket", "unknown")
+        combined = combined_scores.get(ticker, 0.0)
+
+        h = holdings_map.get(ticker)
+        current_value = h.market_value if h else 0.0
+        price = (h.last_price if h and h.last_price else None) or latest_prices.get(ticker)
+
+        target_value = target_weight * total_capital
+        delta = target_value - current_value
+        spread = meta.get("spread_override") or spread_proxy
+        exp_ret = combined * anchor_return if combined > 0.0 else None
+
+        # ── Gate 1: signal direction ──────────────────────────────────────
+        if combined <= 0.0:
+            cards.append(TradeCard(
+                ticker=ticker, bucket=bucket, action="SKIP",
+                units=None, est_price=price, delta_dollars=None,
+                combined_signal=combined, expected_return_pct=None,
+                gate_status=GateStatus.SKIP_SIGNAL,
+                gate_reason="negative or zero combined signal",
+            ))
+            continue
+
+        # ── Gate 2: no additional buy needed (already at/above target) ────
+        if delta <= 0.0:
+            b_cfg = alloc_cfg.get(bucket, {})
+            b_actual = bucket_actual.get(bucket, 0.0)
+            b_max = b_cfg.get("target", 0.0) + b_cfg.get("tolerance", 0.0)
+            if b_actual > b_max:
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="WARN",
+                    units=None, est_price=price, delta_dollars=delta,
+                    combined_signal=combined, expected_return_pct=exp_ret,
+                    gate_status=GateStatus.OVERWEIGHT,
+                    gate_reason=f"bucket {bucket} at {b_actual*100:.1f}% > {b_max*100:.1f}% max",
+                ))
+            else:
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="HOLD",
+                    units=None, est_price=price, delta_dollars=delta,
+                    combined_signal=combined, expected_return_pct=exp_ret,
+                    gate_status=GateStatus.PASS,
+                    gate_reason="at or above target weight",
+                ))
+            continue
+
+        units = delta / price if price else None
+
+        # ── Gate 3: cost gate ─────────────────────────────────────────────
+        gate_threshold = multiplier * spread + profit_floor
+        if exp_ret is not None and exp_ret < gate_threshold:
+            cards.append(TradeCard(
+                ticker=ticker, bucket=bucket, action="SKIP",
+                units=units, est_price=price, delta_dollars=delta,
+                combined_signal=combined, expected_return_pct=exp_ret,
+                gate_status=GateStatus.SKIP_COST,
+                gate_reason=(
+                    f"expected {exp_ret*100:.2f}% < {gate_threshold*100:.2f}% threshold"
+                ),
+            ))
+            continue
+
+        # ── Gate 4: minimum holding days ─────────────────────────────────
+        last_buy = last_buy_dates.get(ticker)
+        if last_buy is not None:
+            days_held = (run_date - last_buy).days
+            if days_held < min_hold:
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="SKIP",
+                    units=units, est_price=price, delta_dollars=delta,
+                    combined_signal=combined, expected_return_pct=exp_ret,
+                    gate_status=GateStatus.MIN_HOLD,
+                    gate_reason=f"bought {days_held}d ago — min hold {min_hold}d (CRA)",
+                ))
+                continue
+
+        # ── Gate 5: CRA annual trade count ───────────────────────────────
+        if annual_trade_count >= max_trades:
+            gate = GateStatus.CRA_LIMIT
+            reason = (
+                f"{annual_trade_count}/{max_trades} trades used this year — "
+                "recommendation shown; Arsh decides whether to proceed"
+            )
+        elif annual_trade_count >= cra_warn:
+            gate = GateStatus.CRA_WARN
+            reason = (
+                f"{annual_trade_count}/{max_trades} trades used — "
+                f"{max_trades - annual_trade_count} remaining this year"
+            )
+        else:
+            gate = GateStatus.PASS
+            reason = None
+
+        cards.append(TradeCard(
+            ticker=ticker, bucket=bucket, action="BUY",
+            units=units, est_price=price, delta_dollars=delta,
+            combined_signal=combined, expected_return_pct=exp_ret,
+            gate_status=gate, gate_reason=reason,
+            cost_estimate=gate_threshold,
+        ))
+
+    # BUY cards first (by delta desc), then WARN, then HOLD, then SKIP
+    _order = {"BUY": 0, "WARN": 1, "HOLD": 2, "SKIP": 3}
+    cards.sort(key=lambda c: (_order.get(c.action, 9), -(c.delta_dollars or 0.0)))
+    return cards
