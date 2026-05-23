@@ -1,6 +1,6 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-22 (mean reversion signal + backtest validation complete).
+> Last updated: 2026-05-22 (universe swap ZAG→CHPS, research pipeline integrated).
 
 ---
 
@@ -29,8 +29,9 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 1 — Foundation | ✅ Complete | Data pipeline, portfolio model, risk metrics, CLI |
 | Phase 2 — Signal Engine | ✅ Complete | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
 | Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
+| Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
 | Phase 3 P2 — Optimizer | 🔲 Not started | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
-| Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation |
+| Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -47,7 +48,8 @@ quant_engine/
 ├── docs/
 │   ├── PROJECT_STATUS.md       ← this file
 │   ├── PHASE_1_ROADMAP.md
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── DEEPER_LEARNING.md      ← Council-validated quant knowledge base (append-only, DL-001+)
 ├── config/
 │   ├── portfolio.yaml          ← buckets, tiers, risk config, trade thresholds + spread_proxy/anchor_return
 │   └── universe.yaml           ← 9 ETF definitions with metadata + spread_override hook
@@ -127,16 +129,17 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 | XIC.TO | iShares S&P/TSX Capped Composite | Growth | Equity (CA) | 0.06% | TSX broad market |
 | HXQ.TO | Horizons NASDAQ-100 ETF | Growth | Equity (US) | 0.28% | Swap structure, tax-efficient in TFSA |
 | XEF.TO | iShares Core MSCI EAFE IMI | Growth | Equity (Dev ex-NA) | 0.22% | Developed markets ex North America |
+| CHPS.TO | Global X AI Semiconductor Index ETF | Growth | Equity (Global Semi) | 0.65% | Added 2026-05-22; replaces ZAG.TO; NVDA/TSMC/Broadcom/ASML/AMD top holdings |
 | VAB.TO | Vanguard Canadian Aggregate Bond | Stable | Fixed income (CA) | 0.09% | Broad Canadian bonds, intermediate duration |
-| ZAG.TO | BMO Aggregate Bond Index | Stable | Fixed income (CA) | 0.09% | Alternative to VAB |
-| HSAV.TO | Horizons High Interest Savings ETF | Stable | Cash equivalent | 0.11% | HISA wrapper, swap structure |
+| HSAV.TO | Horizons High Interest Savings ETF | Stable | Cash equivalent | 0.11% | HISA wrapper, swap structure. STABLE_TICKERS now 2 (ZAG removed, 0.97 corr with VAB) |
 | CDZ.TO | iShares S&P/TSX Dividend Aristocrats | Dividend | Equity-div (CA) | 0.66% | 5+ yr dividend growth companies |
 | VDY.TO | Vanguard FTSE Canadian High Dividend | Dividend | Equity-div (CA) | 0.22% | Bank/energy heavy, low MER |
 
-**Data loaded** (as of 2026-05-19 first pull):
+**Data loaded** (as of 2026-05-19 first pull, universe updated 2026-05-22):
 - VFV.TO: 3,393 rows | XIC.TO: 5,018 | HXQ.TO: 2,528 | XEF.TO: 3,286
-- VAB.TO: 3,593 | ZAG.TO: 4,094 | HSAV.TO: 1,573 | CDZ.TO: 4,942 | VDY.TO: 3,393
-- HSAV shortest history (~6yr, launched 2019) — expected.
+- VAB.TO: 3,593 | HSAV.TO: 1,573 | CDZ.TO: 4,942 | VDY.TO: 3,393 | CHPS.TO: ~1,234
+- HSAV shortest history (~6yr, launched 2019). CHPS launched June 2021 (~1,234 trading days).
+- ZAG.TO removed 2026-05-22 (0.97 correlation with VAB.TO, zero diversification benefit).
 
 ---
 
@@ -164,17 +167,17 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 
 | Rank | Ticker | Score | Raw 12-1 Return |
 |------|--------|-------|----------------|
-| 1 | VDY.TO | +1.000 | +50.25% |
-| 2 | XIC.TO | +0.750 | +45.94% |
-| 3 | HXQ.TO | +0.500 | +43.81% |
-| 4 | VFV.TO | +0.250 | +33.98% |
-| 5 | XEF.TO | +0.000 | +31.50% |
-| 6 | CDZ.TO | -0.250 | +26.13% |
-| 7 | HSAV.TO | -0.500 | +2.85% |
-| 8 | ZAG.TO | -0.750 | +2.38% |
+| 1 | CHPS.TO | +1.000 | — (first run 2026-05-22) |
+| 2 | VDY.TO | +0.750 | +50.25% |
+| 3 | XIC.TO | +0.500 | +45.94% |
+| 4 | HXQ.TO | +0.250 | +43.81% |
+| 5 | VFV.TO | +0.000 | +33.98% |
+| 6 | XEF.TO | -0.250 | +31.50% |
+| 7 | CDZ.TO | -0.500 | +26.13% |
+| 8 | HSAV.TO | -0.750 | +2.85% |
 | 9 | VAB.TO | -1.000 | +2.24% |
 
-Scores are cross-sectional rank-normalized to [-1, +1]. Bonds score lowest because fixed income momentum trails equity in the current environment.
+Scores are cross-sectional rank-normalized to [-1, +1]. CHPS.TO ranked #1 on first live run (AI semiconductor boom already in the data). ZAG.TO removed from universe 2026-05-22.
 
 ### Vol Regime Signal (realized vol percentile, XIC.TO benchmark)
 
@@ -424,8 +427,8 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 3. Check `LEARNING.md` for any decisions or bugs logged since this doc was last updated.
 4. Run `python -m pytest tests/ -v` to confirm baseline is green before any change.
 5. Run `quant signals --signal-type momentum` to confirm live signals are working.
-6. The next task is Phase 3 — start with P3.1 (mean reversion signal) or P3.2 (optimizer), per Arsh's direction.
+6. The next task is Phase 3 P2 (within-bucket optimizer, Ledoit-Wolf). Research pipeline is live — use `/quant-research` to investigate any algorithm before building it.
 
 ---
 
-*Last updated: 2026-05-22. Phase 3 P1 (mean reversion signal) complete. 59/59 tests passing. Committed on `main`.*
+*Last updated: 2026-05-22. Universe swap ZAG.TO→CHPS.TO. Research pipeline (quant-research + Council Config G + DEEPER_LEARNING.md) integrated. 59/59 tests passing. Committed on `main`.*
