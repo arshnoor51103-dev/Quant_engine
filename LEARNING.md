@@ -19,6 +19,17 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-22 — Research pipeline integrated: quant-research skill + the-council Config G + DEEPER_LEARNING.md
+**Context**: Needed a structured, repeatable way to research new algorithms and persist validated knowledge across sessions. Raw web search → implementation was error-prone and produced no institutional memory.
+**Decision**: Integrated three components into a formal research pipeline:
+1. **`quant-research` skill** — orchestrates the full pipeline: classify request → research (web/literature) → Council deliberation → recursive reconvene if contested → write to DEEPER_LEARNING.md.
+2. **`the-council` Config G (Quantitative Research)** — 5-member deliberation panel: Mathematician, Empiricist, Skeptic, Engineer, Risk Manager. The only 5-member default config because quant research needs all five lenses — the gap between "mathematically elegant" and "implementable-profitable-survivable" is too wide for 4.
+3. **`docs/DEEPER_LEARNING.md`** — append-only knowledge base. Every entry carries a convergence level (UNANIMOUS / STRONG_CONSENSUS / CONTESTED_RESOLVED / CONTESTED_UNRESOLVED) and a lifecycle status (THEORETICAL → CANDIDATE → ACTIVE / REJECTED). DL-001 (cross-sectional momentum) seeded from existing backtest validation.
+**Recursive Reconvene Protocol**: When the Council Chair detects genuine unresolved tension, contested claims are narrowed and re-deliberated (max 3 rounds, aperture shrinks each round). Prevents infinite loops while ensuring real disagreements get resolution attempts.
+**Convergence rules**: CONTESTED_UNRESOLVED entries still land in DEEPER_LEARNING.md with a minority report — disagreement is logged, not buried.
+**What triggered this**: Mean reversion backtest results (Phase 3 P1) demonstrated that "understood" ≠ "validated." A 5-member Council would have flagged the 0.836 cross-sectional correlation with momentum before the build, not after.
+**Files changed**: `docs/DEEPER_LEARNING.md` (created), CLAUDE.md (research pipeline section added), LEARNING.md (this entry). Skills installed globally to `~/.claude/skills/`.
+
 ### 2026-05-22 — Universe swap: ZAG.TO removed, CHPS.TO added to growth bucket
 **Context**: Council session evaluating AI-boom ETF additions. Engine was at 9-ticker Tier 1 max. Adding required removing. ZAG.TO identified as the weakest link: 0.97 correlation with VAB.TO (same Canadian aggregate bond exposure, same MER, smaller AUM). Removing it costs zero diversification.
 **Decision**: Replace ZAG.TO (stable, redundant) with CHPS.TO.TO (Global X AI Semiconductor Index ETF, growth bucket).

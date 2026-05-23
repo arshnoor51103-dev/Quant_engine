@@ -35,3 +35,6 @@ Thumbs.db
 # Secrets (we don't have any yet but future-proof)
 .env
 secrets.yaml
+
+# Skill installer ZIPs (binary archives — installed to ~/.claude/skills/)
+*.skill

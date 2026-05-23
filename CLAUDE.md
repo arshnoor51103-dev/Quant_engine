@@ -86,7 +86,8 @@ quant_engine/
 ├── tests/
 ├── docs/
 │   ├── PHASE_1_ROADMAP.md
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── DEEPER_LEARNING.md ← Council-validated quant knowledge base (append-only)
 ├── data/                  ← SQLite db, cached parquet (gitignored)
 └── logs/                  ← daily run logs (gitignored)
 ```
@@ -121,6 +122,16 @@ quant_engine/
 2. When asked to add a signal model, scaffold it under `src/signals/`, write a backtest in `tests/`, document the math.
 3. When data fetching fails, log to `logs/`, retry with backoff, never silently return stale data.
 4. When optimizer outputs violate constraints, raise — never quietly clip.
+5. When asked to research a quant concept, signal, or algorithm — invoke the `quant-research` skill. It runs: classify → web research → Council deliberation (Config G, 5 members) → recursive reconvene if contested → write validated entry to `docs/DEEPER_LEARNING.md`. Do not shortcut this pipeline with a bare web search.
+
+## Research Knowledge Base
+
+`docs/DEEPER_LEARNING.md` is the persistent, Council-validated knowledge base for this project. Rules:
+- **Append-only.** Never modify past entries. Supersede with new entries that reference the old.
+- **No entry without Council deliberation.** Raw research findings do not go in directly.
+- **Every entry carries a convergence level**: UNANIMOUS / STRONG_CONSENSUS / CONTESTED_RESOLVED / CONTESTED_UNRESOLVED.
+- **Entry IDs are sequential and never reused**: DL-001, DL-002, ...
+- **Status lifecycle**: THEORETICAL → CANDIDATE → ACTIVE (or REJECTED)
 
 ## What Claude Code Should Never Do
 
@@ -129,6 +140,7 @@ quant_engine/
 3. **Never widen the asset universe past the current capital tier** without a config update.
 4. **Never delete `LEARNING.md` entries.** Append-only. Corrections go as new entries.
 5. **Never assume the operator has tested something.** If it isn't in `tests/`, it isn't tested.
+6. **Never write to `docs/DEEPER_LEARNING.md` without Council deliberation.** The `quant-research` skill enforces this — use it.
 
 ---
 
@@ -153,4 +165,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: Universe swap ZAG.TO → CHPS.TO (growth), 2026-05-22.*
+*Last updated: Research pipeline integrated — quant-research skill + the-council Config G + DEEPER_LEARNING.md, 2026-05-22.*
