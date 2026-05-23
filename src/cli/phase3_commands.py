@@ -32,10 +32,14 @@ from ..portfolio.model import (
     load_universe_map,
     nav,
     price_series,
+    price_series_batch,
 )
+from ..portfolio.optimizer import BucketOptimizer
 from ..portfolio.recommendations import (
     GateStatus,
     TradeCard,
+    compute_target_weights,
+    compute_combined_scores,
     generate_trade_cards,
 )
 from ..signals.momentum import MomentumSignal
@@ -173,9 +177,46 @@ def _print_cards(
         console.print("\n[yellow]No BUY recommendations generated.[/yellow]")
 
 
+def _print_weight_comparison(
+    equal_weights: dict[str, float],
+    opt_weights: dict[str, float],
+    universe_map: dict[str, dict],
+    total_capital: float,
+) -> None:
+    """Print a side-by-side table of equal-weight vs optimized portfolio weights."""
+    table = Table(title="Weight Comparison: Equal-Weight vs Optimized")
+    table.add_column("Ticker")
+    table.add_column("Bucket")
+    table.add_column("Equal-Weight", justify="right")
+    table.add_column("Optimized",   justify="right")
+    table.add_column("Delta",        justify="right")
+    table.add_column("$ Delta",      justify="right")
+
+    for ticker in sorted(universe_map.keys()):
+        ew = equal_weights.get(ticker, 0.0)
+        ow = opt_weights.get(ticker, 0.0)
+        diff = ow - ew
+        dollar_diff = diff * total_capital
+        bucket = universe_map[ticker].get("bucket", "—")
+        diff_style = "green" if diff > 0.001 else ("red" if diff < -0.001 else "dim")
+        table.add_row(
+            ticker,
+            bucket,
+            f"{ew*100:.1f}%",
+            f"{ow*100:.1f}%",
+            Text(f"{diff*100:+.1f}%", style=diff_style),
+            Text(f"${dollar_diff:+,.0f}", style=diff_style),
+        )
+
+    console.print(table)
+
+
 def recommend_command(
     cash: float = typer.Option(0.0, "--cash", help="New cash to deploy in CAD"),
     save: bool = typer.Option(False, "--save", help="Persist recommendations to DB"),
+    optimize: bool = typer.Option(
+        False, "--optimize", help="Use Markowitz within-bucket optimizer instead of equal-weight"
+    ),
 ) -> None:
     """
     Generate trade recommendations for the current portfolio.
@@ -183,6 +224,9 @@ def recommend_command(
     With no holdings (NAV=0), --cash is required to specify deployable capital.
     With existing holdings, --cash is optional and represents new deployment
     on top of the existing portfolio.
+
+    Add --optimize to use the Ledoit-Wolf Markowitz optimizer within each bucket
+    instead of the default signal-proportional equal-weight allocation.
     """
     holdings = get_holdings()
     portfolio_nav = nav(holdings)
@@ -198,6 +242,7 @@ def recommend_command(
 
     portfolio_cfg = load_portfolio_config()
     universe_map = load_universe_map()
+    alloc_cfg = portfolio_cfg["allocation"]
 
     # Load signal history — enough for the slowest signal
     mom_sig = MomentumSignal()
@@ -220,6 +265,27 @@ def recommend_command(
     all_last_buys = get_all_last_buy_dates()
     last_buy_dates = {t: all_last_buys.get(t) for t in universe_map}
 
+    # Compute equal-weight signal-proportional weights (always, for comparison)
+    combined_scores = compute_combined_scores(momentum_result, regime_result)
+    equal_weights = compute_target_weights(combined_scores, alloc_cfg, universe_map)
+
+    optimized_weights = None
+    if optimize:
+        opt = BucketOptimizer(config=portfolio_cfg)
+        # Load full price history for covariance estimation (252 trading days)
+        all_tickers = list(universe_map.keys())
+        price_history = price_series_batch(all_tickers, lookback_days=252 + 30)
+        optimized_weights = opt.optimize(
+            signal_scores=momentum_result.scores,
+            price_history=price_history,
+            universe_map=universe_map,
+            bucket_config=alloc_cfg,
+        )
+        total_capital = portfolio_nav + cash
+        if total_capital > 0:
+            _print_weight_comparison(equal_weights, optimized_weights, universe_map, total_capital)
+        console.print()
+
     cards = generate_trade_cards(
         momentum_result=momentum_result,
         regime_result=regime_result,
@@ -231,6 +297,7 @@ def recommend_command(
         annual_trade_count=annual_trades,
         last_buy_dates=last_buy_dates,
         latest_prices=latest_prices,
+        optimized_weights=optimized_weights,
     )
 
     if save:

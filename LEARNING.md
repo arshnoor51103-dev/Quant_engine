@@ -19,6 +19,24 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-23 — Phase 3 P2: Within-bucket Markowitz optimizer with Ledoit-Wolf shrinkage
+**Context**: Signal-proportional equal-weight allocation (P0) ignores covariance structure within buckets. With 5 growth ETFs, CHPS.TO would receive 34% of the portfolio when ranked #1 — a single-ticker concentration well above the 40%-of-bucket cap.
+**Decision**: Implemented `BucketOptimizer` in `src/portfolio/optimizer.py`. Key design choices:
+1. **Ledoit-Wolf covariance (sklearn)**: Added `scikit-learn>=1.4.0`. Sample covariance on 2–5 assets over 252 days is near-singular. LW shrinkage toward the structured target is analytically optimal with no hyperparameter tuning — 3-line implementation vs ~25 lines for the closed-form formula. Battle-tested.
+2. **Expected return proxy: signal_i × annualized_vol_i**: Signal scores are rank-normalized to [-1, +1]. Multiplying by annualized vol gives return-like units calibrated to each ticker's volatility. Avoids historical mean returns which are noise-dominated at monthly frequency on 9 ETFs. This is the signal as the return forecast.
+3. **Stable bucket always equal-weight**: HSAV.TO is a cash-equivalent (near-zero vol). Running the optimizer on stable would produce ~95% HSAV / 5% VAB — mathematically optimal but operationally wrong. P0 decision stands: stable always 1/n per ticker.
+4. **SLSQP solver (scipy)**: Handles equality + inequality constraints natively. Constraints: sum(w)=1, w_i≥0, w_i≥5% if included, w_i≤40%. Falls back to equal-weight on solver failure — pipeline never crashes.
+5. **Rebalance threshold (2%)**: Weight changes < 2% produce BELOW_THRESHOLD HOLD cards instead of BUY. With 24 trades/year limit, can't burn slots on trivial rebalances. Gate added as GateStatus.BELOW_THRESHOLD.
+6. **Integration**: Optimizer is opt-in via `--optimize` flag on `quant recommend`. Equal-weight path unchanged. `generate_trade_cards` accepts optional `optimized_weights` dict — zero breaking changes to P0 tests.
+**Live demo result (2026-05-23, NORMAL regime, $800 capital)**:
+- CHPS.TO: 34.3% → 24.0% (optimizer caps at 40% of 60% growth = 24% portfolio)
+- HXQ.TO: 17.1% → 24.0% (risk-adjusted; lower vol than CHPS, same bucket constraint)
+- XIC.TO: 8.6% → 12.0% (captured redistributed weight)
+- Stable: 12.5%/12.5% unchanged ✓
+**Backtester integration**: `engine.py` is equal-weight only. Running a weights-comparison backtest would require passing a weight function to `run_backtest` — deferred to a future phase. The within-bucket optimizer's value shows in realized portfolio Sharpe over time, not in the existing equal-weight backtester.
+**Tests**: 31 new tests in `tests/test_optimizer.py`, 109/109 passing.
+**Files**: `src/portfolio/optimizer.py` (new), `src/portfolio/recommendations.py` (extended), `src/cli/phase3_commands.py` (extended), `config/portfolio.yaml` (optimizer block), `requirements.txt` (scikit-learn).
+
 ### 2026-05-22 — Research pipeline integrated: quant-research skill + the-council Config G + DEEPER_LEARNING.md
 **Context**: Needed a structured, repeatable way to research new algorithms and persist validated knowledge across sessions. Raw web search → implementation was error-prone and produced no institutional memory.
 **Decision**: Integrated three components into a formal research pipeline:

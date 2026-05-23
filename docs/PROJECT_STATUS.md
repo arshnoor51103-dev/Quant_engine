@@ -30,7 +30,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 2 — Signal Engine | ✅ Complete | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
 | Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
 | Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
-| Phase 3 P2 — Optimizer | 🔲 Not started | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
+| Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
@@ -109,7 +109,7 @@ Or if installed as `quant`: `quant <command>`
 ### Phase 3 P0 Commands
 | Command | What it does |
 |---------|-------------|
-| `quant recommend [--cash N] [--save]` | Run full recommendation pipeline. Prints trade cards with gate status. `--cash` required when NAV=0. `--save` persists cards to DB and assigns rec IDs. |
+| `quant recommend [--cash N] [--save] [--optimize]` | Run full recommendation pipeline. `--optimize` uses Ledoit-Wolf Markowitz within-bucket weights instead of equal-weight. Prints weight comparison table then trade cards. |
 | `quant execute <ID> --price X --units Y [--date YYYY-MM-DD]` | Mark recommendation as executed. Atomically updates rec status + creates trade record with actual fill. |
 | `quant pending` | List all pending (unsaved/unexecuted) recommendations with rec IDs. |
 | `quant skip <ID>` | Mark a pending recommendation as skipped (not executed). |
@@ -303,10 +303,12 @@ tests/test_metrics.py           11 tests — all portfolio/metrics.py functions
 tests/test_signals.py           11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
 tests/test_recommendations.py  22 tests — combined signals, target weights, all gate types, cold-start math
 tests/test_mean_reversion.py    16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
+tests/test_optimizer.py         31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
+tests/test_storage.py           17 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 59/59 passing as of 2026-05-22.
+**Status**: 109/109 passing as of 2026-05-23.
 
 **Known test gaps** (TODO for Phase 3 P1+):
 - Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.

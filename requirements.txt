@@ -17,6 +17,9 @@ rich>=13.7.0
 # Stats (for Phase 2 — installed early)
 statsmodels>=0.14.0
 
+# Optimizer (for Phase 3 P2 — Ledoit-Wolf covariance shrinkage)
+scikit-learn>=1.4.0
+
 # API + dashboard
 fastapi>=0.111.0
 uvicorn>=0.30.0

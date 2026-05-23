@@ -34,12 +34,13 @@ from .model import Holding
 
 class GateStatus(str, Enum):
     PASS = "PASS"
-    CRA_WARN = "CRA_WARN"       # 20-23 trades used — BUY still recommended
-    CRA_LIMIT = "CRA_LIMIT"     # 24 trades used — shown but flagged, Arsh decides
-    SKIP_SIGNAL = "SKIP"        # combined signal <= 0
-    SKIP_COST = "SKIP_COST"     # expected return below cost threshold
-    MIN_HOLD = "MIN_HOLD"       # bought too recently (< min_holding_days)
-    OVERWEIGHT = "OVERWEIGHT"   # bucket above tolerance — no additional buy
+    CRA_WARN = "CRA_WARN"             # 20-23 trades used — BUY still recommended
+    CRA_LIMIT = "CRA_LIMIT"           # 24 trades used — shown but flagged, Arsh decides
+    SKIP_SIGNAL = "SKIP"              # combined signal <= 0
+    SKIP_COST = "SKIP_COST"           # expected return below cost threshold
+    MIN_HOLD = "MIN_HOLD"             # bought too recently (< min_holding_days)
+    OVERWEIGHT = "OVERWEIGHT"         # bucket above tolerance — no additional buy
+    BELOW_THRESHOLD = "BELOW_THRESH"  # optimizer weight change < rebalance_threshold
 
 
 @dataclass
@@ -148,6 +149,7 @@ def generate_trade_cards(
     annual_trade_count: int,
     last_buy_dates: dict[str, date | None],
     latest_prices: dict[str, float],
+    optimized_weights: dict[str, float] | None = None,
 ) -> list[TradeCard]:
     """
     Full recommendation pipeline. Returns one TradeCard per universe ticker.
@@ -163,6 +165,9 @@ def generate_trade_cards(
         annual_trade_count: executed trades in current calendar year (from trades table)
         last_buy_dates:     {ticker: date_of_last_buy_or_None}
         latest_prices:      {ticker: latest_close_price} for all universe tickers
+        optimized_weights:  optional pre-computed portfolio-level weights from
+                            BucketOptimizer.optimize(). When supplied, replaces the
+                            default signal-proportional compute_target_weights output.
 
     Raises:
         ValueError: if portfolio_nav == 0 and cash == 0 (no capital to work with).
@@ -185,10 +190,15 @@ def generate_trade_cards(
     min_hold: int = int(trading.get("min_holding_days", 14))
 
     cost_threshold = multiplier * spread_proxy + profit_floor
+    opt_cfg = portfolio_config.get("optimizer", {})
+    rebalance_threshold: float = opt_cfg.get("rebalance_threshold_pct", 0.02)
     total_capital = portfolio_nav + cash
 
     combined_scores = compute_combined_scores(momentum_result, regime_result)
-    target_weights = compute_target_weights(combined_scores, alloc_cfg, universe_map)
+    if optimized_weights is not None:
+        target_weights = optimized_weights
+    else:
+        target_weights = compute_target_weights(combined_scores, alloc_cfg, universe_map)
 
     holdings_map: dict[str, Holding] = {h.ticker: h for h in holdings}
 
@@ -252,6 +262,29 @@ def generate_trade_cards(
             continue
 
         units = delta / price if price else None
+
+        # ── Gate 2b: rebalance threshold (optimizer mode only) ────────────
+        # Suppress trade cards when the weight change is too small to justify
+        # burning a trade slot. Only active when optimized_weights are supplied.
+        if (
+            optimized_weights is not None
+            and rebalance_threshold > 0.0
+            and total_capital > 0.0
+        ):
+            current_weight = current_value / total_capital if total_capital > 0.0 else 0.0
+            weight_change = abs(target_weight - current_weight)
+            if weight_change < rebalance_threshold:
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="HOLD",
+                    units=None, est_price=price, delta_dollars=delta,
+                    combined_signal=combined, expected_return_pct=exp_ret,
+                    gate_status=GateStatus.BELOW_THRESHOLD,
+                    gate_reason=(
+                        f"weight change {weight_change*100:.2f}% < "
+                        f"{rebalance_threshold*100:.0f}% threshold"
+                    ),
+                ))
+                continue
 
         # ── Gate 3: cost gate ─────────────────────────────────────────────
         gate_threshold = multiplier * spread + profit_floor

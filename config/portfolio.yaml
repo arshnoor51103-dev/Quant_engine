@@ -60,3 +60,11 @@ trading:
 rebalance:
   drift_threshold: 0.05      # rebalance bucket if drift > 5%
   scheduled_review: monthly  # 1st market day of each month
+
+# Within-bucket Markowitz optimizer (Phase 3 P2)
+# Stable bucket always uses equal-weight regardless of these settings.
+optimizer:
+  risk_aversion: 2.0          # lambda in w'mu - (lambda/2) * w'Sigma*w
+  max_position_pct: 0.40      # no single ticker > 40% of its bucket
+  min_position_pct: 0.05      # if included, must be >= 5% of bucket
+  rebalance_threshold_pct: 0.02  # suppress trade cards for weight changes < 2%
