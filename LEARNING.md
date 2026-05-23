@@ -19,6 +19,15 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-23 — Structured research pipeline: hypothesis lifecycle tracker at docs/research/
+**Context**: The existing research system (quant-research skill + Council Config G + DEEPER_LEARNING.md) validates quant concepts and builds the knowledge base, but there was no formal system for tracking strategy hypotheses from proposal through backtest to promotion or death. Ideas were scattered across LEARNING.md entries and PROJECT_STATUS.md tables with no enforced workflow or kill criteria.
+**Decision**: Built `docs/research/` as a documentation-only hypothesis lifecycle tracker. No Python, no database, no automation — just disciplined Markdown with an enforced workflow.
+**Why structured over flat**: A flat notes file (LEARNING.md entries) doesn't enforce that a hypothesis reaches Council before implementation, doesn't require a kill criteria table before a backtest runs, and doesn't produce a reusable autopsy when an idea dies. The structured pipeline enforces the discipline at the file creation level — you can't fill in the template halfway and call it done.
+**Why graveyard matters**: A killed hypothesis with a thorough autopsy is more valuable than a vague "we tried mean reversion, it didn't work" note. The autopsy distinguishes structural failures (the idea is wrong) from parameter failures (the idea is wrong for this universe/constraint set). H001 is a parameter failure — the signal math is sound, the operating environment isn't. That distinction determines whether the idea gets revisited at Tier 2 or abandoned permanently.
+**Why no LLM strategy generation**: The Council stress-tests human hypotheses — it does not generate signal math. All ideas originate from academic papers, market observations, or backtest anomalies. The Council's value is adversarial pressure on an idea that already has a thesis and math. Asking an LLM to invent a strategy and then having it review its own idea is circular.
+**Files created**: `docs/research/PIPELINE.md` (master rules), `docs/research/TEMPLATE_HYPOTHESIS.md`, `docs/research/hypotheses/H001_mean_reversion_standalone.md` (backfill), `docs/research/graveyard/H001_mean_reversion_standalone.md` (first graveyard resident), `docs/research/watchlist/README.md`, `docs/research/watchlist/ai_semiconductor.md`, `docs/research/watchlist/canadian_energy.md`, `docs/research/findings/` (empty, awaiting first promotion).
+**CLAUDE.md updated**: Research pipeline section added linking to PIPELINE.md and stating the workflow rules.
+
 ### 2026-05-23 — Phase 3 P2: Within-bucket Markowitz optimizer with Ledoit-Wolf shrinkage
 **Context**: Signal-proportional equal-weight allocation (P0) ignores covariance structure within buckets. With 5 growth ETFs, CHPS.TO would receive 34% of the portfolio when ranked #1 — a single-ticker concentration well above the 40%-of-bucket cap.
 **Decision**: Implemented `BucketOptimizer` in `src/portfolio/optimizer.py`. Key design choices:

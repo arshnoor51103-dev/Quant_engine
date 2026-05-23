@@ -133,6 +133,24 @@ quant_engine/
 - **Entry IDs are sequential and never reused**: DL-001, DL-002, ...
 - **Status lifecycle**: THEORETICAL → CANDIDATE → ACTIVE (or REJECTED)
 
+## Structured Research Pipeline
+
+`docs/research/` is the hypothesis lifecycle tracker. Separate from DEEPER_LEARNING.md (concept knowledge base) — this is where strategy ideas live from proposal through backtest to promotion or death.
+
+**Master rules:** `docs/research/PIPELINE.md` — read this before proposing any new signal.
+**Template:** `docs/research/TEMPLATE_HYPOTHESIS.md` — every hypothesis uses this structure.
+
+Workflow: `PROPOSED → COUNCIL_REVIEWED → BACKTESTED → PROMOTED / KILLED / SHELVED`
+
+Key rules:
+- Every strategy idea — from papers, observations, or anomalies — enters as a hypothesis file in `hypotheses/`.
+- No hypothesis skips Council review (`/quant-research` skill). No implementation before Council approval.
+- No hypothesis touches the live codebase until all kill criteria are cleared by backtest.
+- Killed hypotheses move to `graveyard/` with autopsy filled in. The graveyard is permanent and append-only.
+- The watchlist (`watchlist/`) is passive background research for future tiers — zero interaction with live system.
+
+**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22)
+
 ## What Claude Code Should Never Do
 
 1. **Never recommend live trading without a backtest behind the signal.**

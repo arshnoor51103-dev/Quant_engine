@@ -32,6 +32,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
 | Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
+| Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
