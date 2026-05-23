@@ -34,8 +34,8 @@ UNIVERSE_MAP = {
     "XIC.TO":  {"bucket": "growth",   "spread_override": None},
     "HXQ.TO":  {"bucket": "growth",   "spread_override": None},
     "XEF.TO":  {"bucket": "growth",   "spread_override": None},
+    "CHPS.TO": {"bucket": "growth",   "spread_override": None},
     "VAB.TO":  {"bucket": "stable",   "spread_override": None},
-    "ZAG.TO":  {"bucket": "stable",   "spread_override": None},
     "HSAV.TO": {"bucket": "stable",   "spread_override": None},
     "CDZ.TO":  {"bucket": "dividend", "spread_override": None},
     "VDY.TO":  {"bucket": "dividend", "spread_override": None},
@@ -62,7 +62,7 @@ PORTFOLIO_CONFIG = {
 
 LATEST_PRICES = {
     "VFV.TO": 120.0, "XIC.TO": 38.0, "HXQ.TO": 55.0, "XEF.TO": 32.0,
-    "VAB.TO": 24.0,  "ZAG.TO": 16.0, "HSAV.TO": 50.0,
+    "CHPS.TO": 80.0, "VAB.TO": 24.0, "HSAV.TO": 50.0,
     "CDZ.TO": 30.0,  "VDY.TO": 42.0,
 }
 
@@ -106,12 +106,12 @@ def _no_last_buys() -> dict:
 # ─── compute_combined_scores ─────────────────────────────────────────────────
 
 def test_combined_stable_always_equal_weight():
-    """Stable tickers get 1/3 regardless of regime or momentum."""
+    """Stable tickers get 1/n_stable regardless of regime or momentum."""
     mom = _mom_result({t: -1.0 for t in UNIVERSE_MAP})
     regime = _regime_result("normal")
     scores = compute_combined_scores(mom, regime)
     for t in STABLE_TICKERS:
-        assert scores[t] == pytest.approx(1.0 / 3)
+        assert scores[t] == pytest.approx(1.0 / len(STABLE_TICKERS))
 
 
 def test_combined_crisis_kills_growth():

@@ -45,7 +45,7 @@ REGIME_SCORES = {
     Regime.CRISIS: -1.0,
 }
 
-STABLE_TICKERS: frozenset[str] = frozenset({"VAB.TO", "ZAG.TO", "HSAV.TO"})
+STABLE_TICKERS: frozenset[str] = frozenset({"VAB.TO", "HSAV.TO"})
 
 
 class VolRegimeSignal(Signal):

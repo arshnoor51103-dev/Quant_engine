@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "diagnose": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/diagnose/SKILL.md",
+      "computedHash": "1c3c85517ac42116fe5f2bfb5150f7b3e38ad23808e40b33fbb01f1afb611983"
+    },
+    "grill-me": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grill-me/SKILL.md",
+      "computedHash": "daf64ca15f4fa081a6747766db538e2dbd1131725ed4fcdd3d538dc62c7035ba"
+    },
+    "the-council": {
+      "source": "local",
+      "sourceType": "local",
+      "skillPath": "the-council/SKILL.md",
+      "computedHash": "5438822c4caf961f7332a451e2211e532f9821bedd3dfb39df068eacfb1f088b"
+    }
+  }
+}

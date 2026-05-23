@@ -19,6 +19,20 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-22 — Universe swap: ZAG.TO removed, CHPS.TO added to growth bucket
+**Context**: Council session evaluating AI-boom ETF additions. Engine was at 9-ticker Tier 1 max. Adding required removing. ZAG.TO identified as the weakest link: 0.97 correlation with VAB.TO (same Canadian aggregate bond exposure, same MER, smaller AUM). Removing it costs zero diversification.
+**Decision**: Replace ZAG.TO (stable, redundant) with CHPS.TO.TO (Global X AI Semiconductor Index ETF, growth bucket).
+**CHPS.TO rationale**:
+- TSX-listed, CAD-denominated — passes Tier 1 constraints
+- 1,234 trading days of history (June 2021) — well above 252-day momentum lookback minimum
+- MER 0.65% (management fee 0.45%) — confirmed via globalx.ca, no fee waiver
+- Average daily volume ~32k shares — adequate liquidity for sub-$10k positions
+- Holdings (NVDA 20.6%, TSMC 16.1%, Broadcom 15.2%, ASML 11.4%, AMD 7.2%) — includes TSMC and ASML not present in HXQ.TO/VFV.TO at meaningful weights; genuine incremental semiconductor exposure
+- Momentum rank #1 (+1.000) on first live signal run (2026-05-22) — AI semiconductor boom already in the data
+**STABLE_TICKERS change**: frozenset shrinks from 3 → 2 (VAB.TO, HSAV.TO). Stable equal-weight goes from 1/3 → 1/2 per ticker. Test updated to `1.0 / len(STABLE_TICKERS)` to stay dynamic.
+**Rejected candidates this session**: CIAI.TO (0.68% MER, same top-5 as HXQ.TO), INAI.TO (good MER but heavy overlap with HXQ.TO), MTRX.TO (Jan 2025 launch — insufficient history), AIQ.TO / ARTI.TO (too new). TEC.TO deferred — XEF.TO still provides geographic diversification not in TEC.TO.
+**Lesson**: Redundancy in the stable bucket is a quiet drag. Two correlated tickers that both track Canadian aggregate bonds consume a universe slot for zero diversification benefit. Audit for ticker-level correlation, not just bucket-level balance.
+
 ### 2026-05-22 — Mean reversion signal design (Phase 3 P1)
 **Context**: Mean reversion is the classic counterpart to momentum — buy recent losers, sell recent winners. Built it to test whether a 9-ETF Canadian universe has enough cross-sectional dispersion for the signal to show edge.
 **Key design decisions** (grill-me session before any code):

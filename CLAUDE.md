@@ -143,8 +143,9 @@ quant_engine/
 - **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
 - **Cost gate order**: Compute target weights first → diff holdings → gate each resulting trade. Gate is in dollar terms (delta × expected_return ≥ delta × cost_threshold).
 - **BUY-only in P0**: No SELL recommendations until NAV is large enough that drift correction justifies a trade slot.
-- **Combined signal**: `momentum × max(regime_score, 0)` for growth/dividend. Stable bucket uses equal weight (1/3 each) — regime does not gate bond allocation.
+- **Combined signal**: `momentum × max(regime_score, 0)` for growth/dividend. Stable bucket uses equal weight (1/n_stable each) — regime does not gate bond allocation.
 - **CRA discipline**: Hard MIN_HOLD gate (14 days). Max 24 trades/year from `trades` table. Warn at 20. Legal boundary holds until professional account justified (trigger: 24 trades hit OR NAV ≥ $5k).
+- **Universe swap (2026-05-22)**: ZAG.TO removed (redundant with VAB.TO, 0.97 corr), CHPS.TO added to growth bucket (Global X AI Semiconductor, TSX-listed, 1234d history, MER 0.65%). `STABLE_TICKERS` is now `{VAB.TO, HSAV.TO}`. Rejected candidates this session: CIAI.TO, INAI.TO (HXQ.TO overlap), MTRX.TO/AIQ.TO/ARTI.TO (insufficient history). TEC.TO deferred.
 
 For a full picture of what's built, what's tested, all architectural decisions, all bugs found, current signal readings, backtest results, and the Phase 3 roadmap — read:
 
@@ -152,4 +153,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: Phase 3 P1 (mean reversion signal + backtest) complete, 2026-05-22.*
+*Last updated: Universe swap ZAG.TO → CHPS.TO (growth), 2026-05-22.*

@@ -50,13 +50,13 @@ universe:
     notes: Broad Canadian bonds, intermediate duration
     spread_override: null
 
-  - ticker: ZAG.TO
-    name: BMO Aggregate Bond Index ETF
-    bucket: stable
-    asset_class: fixed_income
-    region: CA
-    mer: 0.0009
-    notes: Alternative to VAB, slightly different holdings
+  - ticker: CHPS.TO
+    name: Global X Artificial Intelligence Semiconductor Index ETF
+    bucket: growth
+    asset_class: equity
+    region: US
+    mer: 0.0065   # 65bps; management fee 0.45% + tax
+    notes: Pure-play AI semiconductor chain (NVDA, TSMC, Broadcom, ASML, AMD). Decorrelated from HXQ/VFV on TSMC/ASML weights. Added 2026-05-22 replacing ZAG.TO (redundant with VAB.TO).
     spread_override: null
 
   - ticker: HSAV.TO
