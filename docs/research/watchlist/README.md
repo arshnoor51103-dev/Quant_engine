@@ -7,11 +7,12 @@ Background research on asset categories for future capital tiers.
 
 ## Rules
 
-1. One file per sector or theme.
-2. Track: key ETFs and stocks, what drives the sector, correlation structure with existing universe, entry conditions.
-3. Update opportunistically — when you encounter relevant information during research sessions or Council deliberations.
-4. When capital reaches a new tier threshold, review relevant watchlist files to identify candidates for universe expansion. Run candidates through a formal hypothesis (PIPELINE.md) before adding them.
-5. No buy signals. No urgency. No FOMO. This is a library, not a trading desk.
+1. **Sector overviews** (ETF candidates, sector dynamics, entry triggers) stay at the watchlist root level. One file per sector or theme.
+2. **Individual stock files** go in `stocks/`. Use `TEMPLATE_STOCK.md` for each one. One file per ticker.
+3. Track: key ETFs and stocks, what drives the sector, correlation structure with existing universe, entry conditions.
+4. Update opportunistically — when you encounter relevant information during research sessions or Council deliberations.
+5. When capital reaches a new tier threshold, review relevant watchlist files to identify candidates for universe expansion. Run candidates through a formal hypothesis (PIPELINE.md) before adding them.
+6. No buy signals. No urgency. No FOMO. This is a library, not a trading desk.
 
 ---
 
@@ -28,10 +29,25 @@ Background research on asset categories for future capital tiers.
 
 ## Files in This Watchlist
 
+**Sector overviews (root level):**
+
 | File | Tier Relevance | Status |
 |------|---------------|--------|
 | `ai_semiconductor.md` | Tier 1 (CHPS.TO already live) / Tier 3+ (individual names) | Seeded |
 | `canadian_energy.md` | Tier 2+ candidate | Stub |
+| `canadian_banks.md` | Tier 2 (dividend bucket candidates) | Stub |
+
+**Individual stocks (`stocks/`):**
+
+| File | Tier Relevance | Status |
+|------|---------------|--------|
+| *(empty — Tier 2+ not yet reached)* | | |
+
+**Templates:**
+
+| File | Purpose |
+|------|---------|
+| `TEMPLATE_STOCK.md` | Template for individual stock files in `stocks/` |
 
 ---
 
