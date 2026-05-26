@@ -6,6 +6,9 @@ These add: `quant signals`, `quant backtest`, `quant dashboard`.
 """
 from __future__ import annotations
 
+import json
+import uuid
+from collections import defaultdict
 from datetime import date, timedelta
 
 import typer
@@ -13,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ..data.ingest import load_universe
+from ..data.storage import persist_signals, query_signal_history
 from ..portfolio.model import price_series
 from ..signals.momentum import MomentumSignal, ShortTermMomentum
 from ..signals.vol_regime import VolRegimeSignal
@@ -36,6 +40,7 @@ def _make_signal_map() -> dict:
 
 def signals_command(
     signal_type: str = typer.Option("momentum", help="Signal type: momentum, momentum_short, vol_regime, mean_reversion"),
+    save: bool = typer.Option(False, "--save", help="Persist signal scores to DB"),
 ) -> None:
     """Generate signal scores for the universe."""
     universe = load_universe()
@@ -58,6 +63,11 @@ def signals_command(
             prices[t] = ps
 
     result = sig.generate(prices)
+
+    if save:
+        run_id = str(uuid.uuid4())[:8]
+        n = persist_signals([result], run_id=run_id)
+        console.print(f"[dim]Saved {n} signal rows (run_id: {run_id})[/dim]")
 
     # Display
     table = Table(title=f"Signal: {sig.name} — {result.run_date}")
