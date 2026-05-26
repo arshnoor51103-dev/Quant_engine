@@ -328,8 +328,14 @@ def recommend_command(
 
     max_trades = int(portfolio_cfg["trading"].get("max_trades_per_year", 24))
     _print_cards(
-        cards, portfolio_nav, cash, annual_trades, regime_name,
-        saved=save, max_trades=max_trades, n_signal_rows=n_signal_rows,
+        cards=cards,
+        portfolio_nav=portfolio_nav,
+        cash=cash,
+        annual_trade_count=annual_trades,
+        regime_name=regime_name,
+        saved=save,
+        max_trades=max_trades,
+        n_signal_rows=n_signal_rows,
     )
 
 
