@@ -122,7 +122,7 @@ quant_engine/
 2. When asked to add a signal model, scaffold it under `src/signals/`, write a backtest in `tests/`, document the math.
 3. When data fetching fails, log to `logs/`, retry with backoff, never silently return stale data.
 4. When optimizer outputs violate constraints, raise — never quietly clip.
-5. When asked to research a quant concept, signal, or algorithm — invoke the `quant-research` skill. It runs: classify → web research → Council deliberation (Config G, 5 members) → recursive reconvene if contested → write validated entry to `docs/DEEPER_LEARNING.md`. Do not shortcut this pipeline with a bare web search.
+5. When asked to research a quant concept, signal, or algorithm — invoke the `quant-research` skill. It runs: classify → parallel 4-agent research (Academic Agent across 7 databases + Practitioner Agent across 10 verified sites fire in Wave 1; Replication/Criticism Agent runs 9 targeted searches + 3 mandatory factor zoo checks in Wave 2) → inline Synthesis → Council deliberation (Config G, 5 members) → recursive reconvene if contested → write validated entry to `docs/DEEPER_LEARNING.md`. Do not shortcut this pipeline with a bare web search. Every entry now carries Evidence Quality, Source Coverage, Replication Evidence table, and Practitioner Consensus sections.
 
 ## Research Knowledge Base
 
@@ -149,7 +149,7 @@ Key rules:
 - Killed hypotheses move to `graveyard/` with autopsy filled in. The graveyard is permanent and append-only.
 - The watchlist (`watchlist/`) is passive background research for future tiers — zero interaction with live system.
 
-**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22)
+**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22) · H005 (CANDIDATE — RSI(21) momentum filter, backtest gate required) · H006 (SHELVED — volume spike regime indicator, re-evaluate Tier 2+)
 
 ## What Claude Code Should Never Do
 
@@ -168,6 +168,9 @@ Key rules:
 **Dashboard + CLI redesign. Complete (2026-05-20).**
 **Phase 3 P1 — Mean Reversion Signal. Complete (2026-05-22). Backtest: standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24.2%, alpha −6.6%). Signal in codebase, not in recommendation engine.**
 **Phase 3 P2 — Within-Bucket Optimizer (Ledoit-Wolf). Complete (2026-05-23). `quant recommend --optimize` flag. 31 new tests. 109/109 passing.**
+**quant-research skill upgrade (2026-05-24). 4-agent parallel pipeline (Academic + Practitioner + Replication/Criticism + inline Synthesis). Expanded DEEPER_LEARNING entry template with Evidence Quality, Source Coverage, Replication Evidence, Practitioner Consensus sections.**
+**H005 — RSI(21) > 50 momentum filter (2026-05-26). CANDIDATE. Council: STRONG_CONSENSUS. Mathematically near-redundant with existing momentum_score (Marshall et al. TSMOM/MA correlation 0.81–0.91). Zero practitioner sources use RSI as momentum gate. RSI(21) parameter unsupported at monthly frequency. Requires backtest: measure RSI/momentum empirical correlation, test divergence sub-period, clear Harvey et al. t > 3.0, compare vs price > EMA(12). DL-012.**
+**H006 — Volume spike as regime indicator (2026-05-26). SHELVED. Council: STRONG_CONSENSUS. Three ETF failure modes: creation/redemption noise contamination, absent visibility mechanism, Baker & Stein direction inversion at portfolio-aggregate level. 93% factor zoo failure rate for liquidity signals. Re-evaluate at Tier 2+ with individual equities. DL-013.**
 
 ### Phase 3 P0 decisions locked in CLAUDE.md:
 - **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
@@ -183,4 +186,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: Research pipeline integrated — quant-research skill + the-council Config G + DEEPER_LEARNING.md, 2026-05-22.*
+*Last updated: 2026-05-26. H005 (RSI(21) momentum filter, CANDIDATE, DL-012) and H006 (volume spike regime, SHELVED, DL-013) Council-validated. DL-012 and DL-013 added. H003 (residual reversal, SHELVED Tier 2+) and H004 (vol targeting, CANDIDATE) still pending backtest.*
