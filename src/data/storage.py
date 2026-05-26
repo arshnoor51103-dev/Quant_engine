@@ -12,10 +12,14 @@ Schema is deliberately simple — sqlite, no ORM, raw SQL via sqlite3 stdlib.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, date
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:
+    from ..signals.base import SignalResult
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "quant.db"
 
@@ -92,6 +96,18 @@ CREATE TABLE IF NOT EXISTS run_log (
     level         TEXT NOT NULL,
     message       TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS signal_scores (
+    run_date    DATE NOT NULL,
+    ticker      TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    score       REAL NOT NULL,
+    metadata    JSON,
+    run_id      TEXT,
+    PRIMARY KEY (run_date, ticker, signal_type)
+);
+CREATE INDEX IF NOT EXISTS idx_signal_scores_ticker
+    ON signal_scores(ticker, run_date DESC);
 """
 
 
@@ -411,3 +427,87 @@ def get_all_last_buy_dates(db_path: Path = DB_PATH) -> dict[str, date]:
             "SELECT ticker, MAX(trade_date) AS d FROM trades WHERE side = 'BUY' GROUP BY ticker;"
         ).fetchall()
     return {r["ticker"]: date.fromisoformat(r["d"]) for r in rows if r["d"]}
+
+
+def persist_signals(
+    results: list[SignalResult],
+    run_id: str,
+    db_path: Path = DB_PATH,
+) -> int:
+    """
+    Persist a batch of SignalResult objects to the signal_scores table.
+
+    Uses INSERT OR REPLACE — revisit to ON CONFLICT DO UPDATE if nullable
+    columns are added to this table in future.
+
+    Args:
+        results:  one SignalResult per signal type in this run
+        run_id:   short UUID linking these rows to a recommendation batch;
+                  stamp the same value on recommendations rows to enable the
+                  JOIN audit path (signal_scores.run_id = recommendations.run_id)
+        db_path:  path to SQLite DB
+
+    Returns:
+        total rows written across all results
+    """
+    sql = """
+    INSERT OR REPLACE INTO signal_scores
+        (run_date, ticker, signal_type, score, metadata, run_id)
+    VALUES (?, ?, ?, ?, ?, ?);
+    """
+    rows: list[tuple] = []
+    for result in results:
+        run_date_str = result.run_date.isoformat()
+        for ticker, score in result.scores.items():
+            meta = result.ticker_metadata(ticker)
+            rows.append((
+                run_date_str,
+                ticker,
+                result.signal_name,
+                score,
+                json.dumps(meta),
+                run_id,
+            ))
+    if not rows:
+        return 0
+    with get_connection(db_path) as conn:
+        conn.executemany(sql, rows)
+        conn.commit()
+    return len(rows)
+
+
+def query_signal_history(
+    ticker: str,
+    limit: int,
+    signal_types: list[str] | None = None,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """
+    Return persisted signal scores for a ticker, newest first.
+
+    Args:
+        ticker:       Yahoo Finance ticker symbol (e.g. 'VFV.TO')
+        limit:        maximum number of rows to return
+        signal_types: if provided, restrict results to these signal type names
+        db_path:      path to SQLite DB
+
+    Returns:
+        list of dicts with keys run_date (str ISO), signal_type (str),
+        score (float), metadata (JSON string — caller must json.loads()),
+        run_id (str | None). Ordered by run_date DESC.
+    """
+    sql = """
+    SELECT run_date, signal_type, score, metadata, run_id
+    FROM signal_scores
+    WHERE ticker = ?
+    """
+    params: list = [ticker]
+    if signal_types:
+        placeholders = ", ".join("?" * len(signal_types))
+        sql += f" AND signal_type IN ({placeholders})"
+        params.extend(signal_types)
+    sql += " ORDER BY run_date DESC LIMIT ?;"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
