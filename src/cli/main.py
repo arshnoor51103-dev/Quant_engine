@@ -26,7 +26,7 @@ from ..portfolio.model import (
     price_series,
 )
 from ..portfolio import metrics as m
-from .phase2_commands import signals_command, backtest_command, dashboard_command
+from .phase2_commands import signals_command, backtest_command, dashboard_command, signal_history_command
 from .phase3_commands import (
     recommend_command,
     execute_command,
@@ -214,6 +214,7 @@ app.command(name="recommend")(recommend_command)
 app.command(name="execute")(execute_command)
 app.command(name="pending")(pending_command)
 app.command(name="skip")(skip_command)
+app.command(name="signal-history")(signal_history_command)
 
 
 if __name__ == "__main__":

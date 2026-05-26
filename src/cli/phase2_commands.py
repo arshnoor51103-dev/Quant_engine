@@ -193,3 +193,77 @@ def dashboard_command(
         uvicorn.run("src.api.server:app", host="0.0.0.0", port=port, reload=False)
     except ImportError:
         console.print("[red]Missing: pip install uvicorn fastapi[/red]")
+
+
+def signal_history_command(
+    ticker: str = typer.Argument(..., help="Ticker symbol, e.g. VFV.TO"),
+    records: int = typer.Option(12, "--records", help="Last N persisted records to show"),
+    signal_type: str | None = typer.Option(
+        None, "--signal-type",
+        help="Filter by signal type (momentum, vol_regime, mean_reversion, etc.)",
+    ),
+) -> None:
+    """Show persisted signal score history for a ticker."""
+    universe = load_universe()
+    known_tickers = {a["ticker"] for a in universe}
+    if ticker not in known_tickers:
+        console.print(
+            f"[yellow]Warning: {ticker} not in current universe — querying history anyway.[/yellow]"
+        )
+
+    signal_types_filter: list[str] | None = [signal_type] if signal_type else None
+    rows = query_signal_history(ticker, limit=records, signal_types=signal_types_filter)
+
+    if not rows:
+        console.print(f"[yellow]No signal history for {ticker}.[/yellow]")
+        return
+
+    # Pivot: group by run_date, signal_type
+    by_date: dict[str, dict[str, dict]] = defaultdict(dict)
+    for row in rows:
+        meta = json.loads(row["metadata"] or "{}")
+        by_date[row["run_date"]][row["signal_type"]] = {
+            "score": row["score"],
+            "metadata": meta,
+            "run_id": row["run_id"],
+        }
+
+    # Determine signal type columns from data (not hardcoded)
+    signal_types_present = sorted({row["signal_type"] for row in rows})
+
+    table = Table(title=f"Signal History: {ticker} (last {records} records)")
+    table.add_column("Date")
+    for st in signal_types_present:
+        table.add_column(st.replace("_", " ").title(), justify="right")
+    table.add_column("Regime")
+    table.add_column("Raw Return", justify="right")
+    table.add_column("Run ID", style="dim")
+
+    for run_date in sorted(by_date.keys(), reverse=True):
+        date_data = by_date[run_date]
+
+        score_cells: list[str] = []
+        for st in signal_types_present:
+            if st in date_data:
+                score = date_data[st]["score"]
+                color = "green" if score > 0.3 else "yellow" if score > 0 else "red"
+                score_cells.append(f"[{color}]{score:+.3f}[/{color}]")
+            else:
+                score_cells.append("—")
+
+        regime = "—"
+        raw_return = "—"
+        run_id = "—"
+        if "vol_regime" in date_data:
+            regime = date_data["vol_regime"]["metadata"].get("regime", "—")
+            run_id = date_data["vol_regime"]["run_id"] or "—"
+        if "momentum" in date_data:
+            rr = date_data["momentum"]["metadata"].get("raw_return")
+            if rr is not None:
+                raw_return = f"{rr:+.1%}"
+            if run_id == "—":
+                run_id = date_data["momentum"]["run_id"] or "—"
+
+        table.add_row(run_date, *score_cells, regime, raw_return, run_id)
+
+    console.print(table)
