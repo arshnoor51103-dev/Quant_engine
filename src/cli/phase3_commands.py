@@ -23,6 +23,7 @@ from ..data.storage import (
     list_pending_recommendations,
     mark_recommendation_executed,
     mark_recommendation_skipped,
+    persist_signals,
     record_trade,
     save_recommendation,
 )
@@ -132,6 +133,7 @@ def _print_cards(
     regime_name: str,
     saved: bool,
     max_trades: int = 24,
+    n_signal_rows: int = 0,
 ) -> None:
     total_capital = portfolio_nav + cash
 
@@ -143,7 +145,10 @@ def _print_cards(
         f"Date: {date.today()}",
     ]
     if saved:
-        header_lines.append("[dim]Saved to DB — use rec ID with `quant execute`[/dim]")
+        header_lines.append(
+            f"[dim]Signals persisted ({n_signal_rows} rows) | "
+            "Cards saved — use rec ID with `quant execute`[/dim]"
+        )
     console.print(Panel("\n".join(header_lines), title="[bold]Quant Recommend[/bold]"))
 
     actionable = [c for c in cards if c.action in ("BUY", "WARN", "HOLD")]
@@ -300,14 +305,18 @@ def recommend_command(
         optimized_weights=optimized_weights,
     )
 
+    n_signal_rows = 0
     if save:
         run_id = str(uuid.uuid4())[:8]
+        # Persist signal scores first — audit trail precedes trade cards
+        signal_results = [momentum_result, regime_result]
+        n_signal_rows = persist_signals(signal_results, run_id=run_id)
         for card in cards:
             rec_id = save_recommendation(
                 ticker=card.ticker,
                 action=card.action,
                 bucket=card.bucket,
-                target_weight=0.0,  # resolved from delta/total_capital by caller if needed
+                target_weight=0.0,
                 combined_signal=card.combined_signal,
                 expected_ret=card.expected_return_pct,
                 cost_estimate=card.cost_estimate,
@@ -318,7 +327,10 @@ def recommend_command(
             card.rec_id = rec_id
 
     max_trades = int(portfolio_cfg["trading"].get("max_trades_per_year", 24))
-    _print_cards(cards, portfolio_nav, cash, annual_trades, regime_name, saved=save, max_trades=max_trades)
+    _print_cards(
+        cards, portfolio_nav, cash, annual_trades, regime_name,
+        saved=save, max_trades=max_trades, n_signal_rows=n_signal_rows,
+    )
 
 
 def execute_command(
