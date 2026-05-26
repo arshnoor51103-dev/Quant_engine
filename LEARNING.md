@@ -350,4 +350,33 @@ The signal's `generate()` guard (`len(prices[benchmark]) < self.lookback_days`) 
 2. `model.py`: bumped `price_series()` default from `252*5` to `252*6` (1512 days) as a safety margin.
 3. `phase2_commands.py`: removed the redundant `max(..., 1260)` floor — `sig.lookback_days` is already the correct minimum.
 
+---
+
+### 2026-05-26 — P3.3 Signal Persistence
+
+**Decision:** Added `signal_scores` SQLite table. `persist_signals()` and
+`query_signal_history()` in `storage.py`. `--save` flag on `quant signals`
+persists scores for that signal type. `quant recommend --save` persists both
+momentum + vol_regime scores before saving trade cards. New `quant
+signal-history TICKER [--records N] [--signal-type TYPE]` command shows
+pivoted score history.
+
+**Rationale:** Signals computed on-the-fly are unauditable. When a trade
+recommendation is generated, there must be a record of which signal scores
+drove it. The `signal_scores.run_id = recommendations.run_id` JOIN is the
+audit path.
+
+**Key design choices:**
+- `SignalResult.ticker_metadata()` extracts per-ticker metadata slices —
+  `storage.py` calls this method and knows nothing about signal internals.
+  Two-tier contract: per-ticker dicts extract per-ticker values (key renamed
+  via explicit `_PER_TICKER_KEY_MAP`); broadcast scalars pass through verbatim.
+- `--save` gates all persistence. No silent DB writes from read-only commands.
+  Daily scheduler (`daily_run.py`) MUST always pass `--save` to
+  `quant recommend`.
+- `signal-history` uses last-N-records semantics (default 12), not calendar
+  days. More useful for a monthly system with sparse persisted data.
+- Schema uses `INSERT OR REPLACE` upsert. Revisit to `ON CONFLICT DO UPDATE`
+  if nullable columns are added to `signal_scores` in future.
+
 **Lesson:** Silent neutral fallback (`score=0.0`) on insufficient data is correct behavior for signal integrity, but callers must actively use `sig.lookback_days` to size the fetch window. Never hardcode a lookback constant that could silently undercut a signal's required history.

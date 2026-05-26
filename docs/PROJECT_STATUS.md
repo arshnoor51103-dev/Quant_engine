@@ -31,6 +31,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
 | Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
 | Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
+| Phase 3 P3.3 — Signal Persistence | ✅ Complete (2026-05-26) | signal_scores table, persist_signals(), query_signal_history(), quant signal-history command |
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
@@ -103,7 +104,8 @@ Or if installed as `quant`: `quant <command>`
 ### Phase 2 Commands
 | Command | What it does |
 |---------|-------------|
-| `quant signals --signal-type [momentum\|momentum_short\|vol_regime\|mean_reversion]` | Generate signal scores for universe. Prints ranked table + raw returns or regime metadata. |
+| `quant signals --signal-type [momentum\|momentum_short\|vol_regime\|mean_reversion] [--save]` | Generate signal scores. `--save` persists to DB with a run_id. |
+| `quant signal-history TICKER [--records N] [--signal-type TYPE]` | Show persisted signal score history. Pivoted table: date, signal scores, regime, raw return. Default last 12 records. |
 | `quant backtest --signal-type X --years N --top-n N` | Walk-forward backtest. Default: momentum, 5yr, top-4. Prints metrics vs VFV benchmark. |
 | `quant dashboard [--port N]` | Launch FastAPI server at localhost:8501. Serves `/api/universe`, `/api/metrics`, `/api/signals`, `/api/status` + HTML dashboard. |
 
@@ -330,8 +332,9 @@ tests/test_storage.py           17 tests — SQLite schema, CRUD, VWAP, annual t
 | `recommendations` | Signal-generated recommendations (not all become trades). |
 | `metrics_snapshots` | Periodic risk/return snapshots per scope/metric/window. |
 | `run_log` | System event log with component + level. |
+| `signal_scores` | Persisted signal scores per ticker per run. PK: (run_date, ticker, signal_type). JOIN to recommendations via run_id. |
 
-**Signal scores are not yet persisted** — they're computed on the fly. Phase 3 should write `signal_scores` to the DB or to the `recommendations` table.
+**Signal scores** are persisted to `signal_scores` via `quant signals --save` or `quant recommend --save`. JOIN path: `signal_scores.run_id = recommendations.run_id`.
 
 ---
 
@@ -387,9 +390,8 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 - Constraint: weights stay within bucket tolerances; no shorting; sum = 1 within bucket
 - Output: target weights per ticker
 
-### P3.3 — Signal Persistence
-- Write signal scores to SQLite at each run (extend `recommendations` table or add `signal_scores` table)
-- Enable historical signal tracking and regime-change audit trail
+### P3.3 — Signal Persistence ✅ COMPLETE (2026-05-26)
+**Phase 3 P3.3 — Signal Persistence. Complete (2026-05-26).** `signal_scores` table. `persist_signals()` + `query_signal_history()` in storage.py. `quant signals --save`, `quant recommend --save` now write signal evidence before trade cards. `quant signal-history` command. 9 new tests. 143/143 passing.
 
 ### P3.4 — Trade Recommendation Engine
 - File: `src/portfolio/recommendations.py`
