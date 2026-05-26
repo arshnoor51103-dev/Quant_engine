@@ -22,6 +22,14 @@ from datetime import date
 import pandas as pd
 
 
+# Rename map for per-ticker dict keys in SignalResult.ticker_metadata().
+# Add entries here when new signals introduce per-ticker dicts with plural keys.
+_PER_TICKER_KEY_MAP: dict[str, str] = {
+    "raw_returns": "raw_return",
+    "z_scores": "z_score",
+}
+
+
 @dataclass
 class SignalResult:
     """Output of a single signal run."""
@@ -33,6 +41,36 @@ class SignalResult:
     def ranked(self, ascending: bool = False) -> list[tuple[str, float]]:
         """Return (ticker, score) sorted by score."""
         return sorted(self.scores.items(), key=lambda x: x[1], reverse=not ascending)
+
+    def ticker_metadata(self, ticker: str) -> dict:
+        """
+        Extract a ticker-specific metadata slice from this result's metadata blob.
+
+        Two-tier extraction contract — binding on all Signal implementations:
+        - Per-ticker dict: any key whose value is a dict is treated as a
+          ticker-keyed mapping. Extracts value[ticker] and renames the key
+          via _PER_TICKER_KEY_MAP (e.g. "raw_returns" -> "raw_return").
+          If ticker is absent from the dict, the key is omitted entirely.
+        - Broadcast scalar: any key whose value is not a dict is passed
+          through verbatim to every ticker.
+
+        Args:
+            ticker: Yahoo Finance ticker symbol (e.g. 'VFV.TO')
+
+        Returns:
+            dict suitable for JSON serialisation. Empty dict if metadata is None.
+        """
+        if not self.metadata:
+            return {}
+        out: dict = {}
+        for key, value in self.metadata.items():
+            if isinstance(value, dict):
+                if ticker in value:
+                    out_key = _PER_TICKER_KEY_MAP.get(key, key)
+                    out[out_key] = value[ticker]
+            else:
+                out[key] = value
+        return out
 
 
 class Signal(ABC):
