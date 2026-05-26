@@ -149,7 +149,7 @@ Key rules:
 - Killed hypotheses move to `graveyard/` with autopsy filled in. The graveyard is permanent and append-only.
 - The watchlist (`watchlist/`) is passive background research for future tiers — zero interaction with live system.
 
-**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22) · H005 (CANDIDATE — RSI(21) momentum filter, backtest gate required) · H006 (SHELVED — volume spike regime indicator, re-evaluate Tier 2+)
+**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22) · H005 (graveyard — RSI(21) momentum filter, KILLED 2026-05-26) · H006 (SHELVED — volume spike regime indicator, re-evaluate Tier 2+)
 
 ## What Claude Code Should Never Do
 
@@ -169,7 +169,7 @@ Key rules:
 **Phase 3 P1 — Mean Reversion Signal. Complete (2026-05-22). Backtest: standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24.2%, alpha −6.6%). Signal in codebase, not in recommendation engine.**
 **Phase 3 P2 — Within-Bucket Optimizer (Ledoit-Wolf). Complete (2026-05-23). `quant recommend --optimize` flag. 31 new tests. 109/109 passing.**
 **quant-research skill upgrade (2026-05-24). 4-agent parallel pipeline (Academic + Practitioner + Replication/Criticism + inline Synthesis). Expanded DEEPER_LEARNING entry template with Evidence Quality, Source Coverage, Replication Evidence, Practitioner Consensus sections.**
-**H005 — RSI(21) > 50 momentum filter (2026-05-26). CANDIDATE. Council: STRONG_CONSENSUS. Mathematically near-redundant with existing momentum_score (Marshall et al. TSMOM/MA correlation 0.81–0.91). Zero practitioner sources use RSI as momentum gate. RSI(21) parameter unsupported at monthly frequency. Requires backtest: measure RSI/momentum empirical correlation, test divergence sub-period, clear Harvey et al. t > 3.0, compare vs price > EMA(12). DL-012.**
+**H005 — RSI(21) > 50 momentum filter (2026-05-26). KILLED. Backtest confirmed mathematical near-redundancy: 96.2% agreement with momentum (9-ETF), t=NaN incremental alpha. Divergence analysis: gate suppressed +7.30% forward-return signals. All 3 kill criteria triggered. DL-012. Autopsy: `docs/research/graveyard/H005_rsi_momentum_filter.md`.**
 **H006 — Volume spike as regime indicator (2026-05-26). SHELVED. Council: STRONG_CONSENSUS. Three ETF failure modes: creation/redemption noise contamination, absent visibility mechanism, Baker & Stein direction inversion at portfolio-aggregate level. 93% factor zoo failure rate for liquidity signals. Re-evaluate at Tier 2+ with individual equities. DL-013.**
 
 ### Phase 3 P0 decisions locked in CLAUDE.md:
@@ -186,4 +186,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: 2026-05-26. H005 (RSI(21) momentum filter, CANDIDATE, DL-012) and H006 (volume spike regime, SHELVED, DL-013) Council-validated. DL-012 and DL-013 added. H003 (residual reversal, SHELVED Tier 2+) and H004 (vol targeting, CANDIDATE) still pending backtest.*
+*Last updated: 2026-05-26. H005 backtest complete — KILLED (t=NaN/−1.00, 96.2% momentum agreement, gate suppresses +7.30% valid signals). H005 graveyard autopsy written. H006 (volume spike regime, SHELVED, DL-013). H003 (residual reversal, SHELVED Tier 2+) and H004 (vol targeting, CANDIDATE) still pending backtest.*

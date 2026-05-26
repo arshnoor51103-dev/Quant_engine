@@ -103,7 +103,7 @@ Sequential: H001, H002, H003, ...
 Never reused. Even if a hypothesis is killed, its ID is retired with it.
 The graveyard preserves killed hypotheses permanently — their IDs don't recycle.
 
-**Current count**: H001 (graveyard)
+**Current count**: H001 (graveyard) · H005 (graveyard)
 
 ---
 
