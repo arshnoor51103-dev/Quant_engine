@@ -221,7 +221,10 @@ def signal_history_command(
     # Pivot: group by run_date, signal_type
     by_date: dict[str, dict[str, dict]] = defaultdict(dict)
     for row in rows:
-        meta = json.loads(row["metadata"] or "{}")
+        try:
+            meta = json.loads(row["metadata"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
         by_date[row["run_date"]][row["signal_type"]] = {
             "score": row["score"],
             "metadata": meta,
