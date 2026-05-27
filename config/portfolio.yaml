@@ -68,3 +68,14 @@ optimizer:
   max_position_pct: 0.40      # no single ticker > 40% of its bucket
   min_position_pct: 0.05      # if included, must be >= 5% of bucket
   rebalance_threshold_pct: 0.02  # suppress trade cards for weight changes < 2%
+
+# Phone alerts via ntfy.sh (Phase 3 P3.5)
+# Public topic — anyone who knows the topic name can subscribe.
+# Use an obscure name. Self-host ntfy if privacy matters later.
+alerts:
+  enabled: true
+  ntfy_topic: "quant-arsh-7k2m9x"   # change before first use
+  triggers:
+    - NEW_RECOMMENDATION
+    - REGIME_CHANGE
+    - DRAWDOWN_WARNING
