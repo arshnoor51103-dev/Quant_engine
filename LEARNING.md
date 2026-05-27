@@ -19,6 +19,20 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-26 — Phase 3 SELL and Rebalance Logic
+**Context**: Phase 3 P0 shipped BUY-only recommendations. The portfolio could accumulate positions that turned negative (signal-driven exits) or let bucket weights drift past tolerance bands (drift-triggered trims) without any way to reduce them. Lifted the BUY-only constraint.
+**Design decisions locked (grill-me session 2026-05-26)**:
+1. **Drift trigger — reuses `needs_rebalance` from `bucket_allocation()`**: A drift fires when `bucket_actual > target + tolerance` (the same boolean the bucket allocation table already computes). No separate `drift_threshold` config field — deleted from `portfolio.yaml`. One truth source, no synchronization risk.
+2. **Signal-SELL cost gate**: `|combined_signal| × anchor_return ≥ 2 × spread + profit_floor`. Symmetric with the BUY gate. The direction check (signal < 0) is separate from the cost check — both must pass. A strong negative signal with a sub-threshold dollar impact still fires HOLD, not SELL.
+3. **Drift-SELL cost gate**: `|delta_dollars| ≥ min_rebalance_trade` (new config field, default $50, under `rebalance:` block in `portfolio.yaml`). Dollar-based because drift is a percentage deviation but the cost penalty is in dollars; comparing percentages to a dollar floor was confusing. $50 floor prevents burning a trade slot on a 0.1-unit trim.
+4. **Single `action="SELL"` with `sell_reason` field**: One action type, not two (`SELL_SIGNAL` / `SELL_DRIFT`). The CLI and execute workflow treat all SELLs identically; the distinction is logged as `sell_reason: "SIGNAL" | "DRIFT"` on the `TradeCard` and persisted in the `recommendations` table. Avoids branching in execute logic, keeps the card schema minimal.
+5. **Signal-SELL = full exit, drift-SELL = partial trim**: Signal-SELL exits all held units (the signal has gone negative — no reason to hold any). Drift-SELL trims only the excess weight (`round(delta / price, 2)` units), not the entire position. This asymmetry is intentional: signal is conviction-based, drift is mechanical rebalancing.
+6. **Tax-loss harvesting skipped**: TFSA has no capital gains tax. TLH is a taxable-account optimization only. Not applicable here.
+7. **Same `quant recommend` + `quant execute` pipeline**: BUY-only guard dropped. SELL cards appear in the same `quant recommend` output, are stored in the same `recommendations` table, and are marked executed via the same `quant execute <ID>` command. No new commands needed.
+**Schema change**: `sell_reason TEXT` column added to `recommendations` table. `migrate_recommendations_v3()` added for databases created before this change — `ALTER TABLE` adds the column with NULL default, no data loss.
+**Tests**: 16 new tests in `tests/test_sell_logic.py`. 159/159 passing.
+**Files**: `config/portfolio.yaml`, `src/data/storage.py`, `src/portfolio/recommendations.py`, `src/cli/phase3_commands.py`, `tests/test_sell_logic.py` (new).
+
 ### 2026-05-26 — H005 and H006 Council-validated research: RSI(21) momentum filter and volume spike regime indicator
 **Context**: Two hypothesis candidates entered the quant-research pipeline. H005 asked whether RSI(21) > 50 adds measurable signal on top of the existing `momentum × regime` composite (ALGO_CHECK). H006 asked whether academic backing exists for volume spikes as a leading regime indicator in ETF markets (LITERATURE_SCAN).
 **Research pipeline run**: Full 4-agent parallel pipeline — Academic Agent (7 databases each), Practitioner Agent (10 verified sites, both topics simultaneously), Replication/Criticism Agent (9 searches + 3 factor zoo checks each), inline Synthesis, Config G Council deliberation.

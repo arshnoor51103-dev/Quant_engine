@@ -22,7 +22,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 
 ---
 
-## Current State: Phase 2 Complete
+## Current State: Phase 3 SELL/Rebalance Complete
 
 | Phase | Status | What It Delivers |
 |-------|--------|-----------------|
@@ -32,6 +32,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
 | Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
 | Phase 3 P3.3 — Signal Persistence | ✅ Complete (2026-05-26) | signal_scores table, persist_signals(), query_signal_history(), quant signal-history command |
+| Phase 3 SELL/Rebalance | ✅ Complete (2026-05-26) | Signal-driven full exit + drift-triggered partial trim, sell_reason field, schema migration, 16 new tests |
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
@@ -308,10 +309,11 @@ tests/test_recommendations.py  22 tests — combined signals, target weights, al
 tests/test_mean_reversion.py    16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
 tests/test_optimizer.py         31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
 tests/test_storage.py           17 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold
+tests/test_sell_logic.py        16 tests — signal-SELL gate, drift-SELL gate, sell_reason field, partial vs full exit
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 109/109 passing as of 2026-05-23.
+**Status**: 159/159 passing as of 2026-05-26.
 
 **Known test gaps** (TODO for Phase 3 P1+):
 - Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.
@@ -436,4 +438,4 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 
 ---
 
-*Last updated: 2026-05-22. Universe swap ZAG.TO→CHPS.TO. Research pipeline (quant-research + Council Config G + DEEPER_LEARNING.md) integrated. 59/59 tests passing. Committed on `main`.*
+*Last updated: 2026-05-26. Phase 3 SELL/Rebalance complete. Signal-driven full exit + drift-triggered partial trim. sell_reason field + schema migration. 16 new tests. 159/159 passing. Branch: phase-3/sell-rebalance-logic.*

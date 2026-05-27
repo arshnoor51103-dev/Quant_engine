@@ -49,18 +49,20 @@ from ..signals.vol_regime import VolRegimeSignal
 console = Console()
 
 _GATE_COLOUR = {
-    GateStatus.PASS:         "green",
-    GateStatus.CRA_WARN:     "yellow",
-    GateStatus.CRA_LIMIT:    "yellow",
-    GateStatus.SKIP_SIGNAL:  "dim",
-    GateStatus.SKIP_COST:    "dim",
-    GateStatus.MIN_HOLD:     "dim",
-    GateStatus.OVERWEIGHT:   "red",
+    GateStatus.PASS:            "green",
+    GateStatus.CRA_WARN:        "yellow",
+    GateStatus.CRA_LIMIT:       "yellow",
+    GateStatus.SKIP_SIGNAL:     "dim",
+    GateStatus.SKIP_COST:       "dim",
+    GateStatus.MIN_HOLD:        "dim",
+    GateStatus.OVERWEIGHT:      "red",
+    GateStatus.BELOW_THRESHOLD: "dim",
 }
 
 _ACTION_COLOUR = {
     "BUY":  "green",
-    "WARN": "red",
+    "SELL": "red",
+    "WARN": "yellow",
     "HOLD": "dim",
     "SKIP": "dim",
 }
@@ -103,18 +105,21 @@ def _make_card_panel(card: TradeCard) -> Panel:
         "Price",   _fmt_price(card.est_price),
         "Exp Ret", _fmt_pct(card.expected_return_pct),
     )
+    if card.sell_reason:
+        label = "Full exit" if card.sell_reason == "SIGNAL" else "Drift correction"
+        grid.add_row("Sell", Text(f"{card.sell_reason} — {label}", style="bold red"), "", "")
     if card.delta_dollars is not None:
         grid.add_row("Delta $", _fmt_dollar(card.delta_dollars), "", "")
     if card.gate_reason:
         grid.add_row("Reason", Text(card.gate_reason, style="dim"), "", "")
-    if card.action == "BUY":
+    if card.action in ("BUY", "SELL"):
         if card.rec_id is not None:
             hint = f"quant execute {card.rec_id} --price <fill> --units <units>"
         else:
             hint = "Run with --save to get a rec ID"
         grid.add_row("", Text(hint, style="dim italic"), "", "")
 
-    border = {"BUY": "green", "WARN": "yellow", "HOLD": "dim"}.get(card.action, "dim")
+    border = {"BUY": "green", "SELL": "red", "WARN": "yellow", "HOLD": "dim"}.get(card.action, "dim")
     action_colour = _ACTION_COLOUR.get(card.action, "")
     title = Text()
     title.append(card.action, style=f"bold {action_colour}")
@@ -151,7 +156,7 @@ def _print_cards(
         )
     console.print(Panel("\n".join(header_lines), title="[bold]Quant Recommend[/bold]"))
 
-    actionable = [c for c in cards if c.action in ("BUY", "WARN", "HOLD")]
+    actionable = [c for c in cards if c.action in ("BUY", "SELL", "WARN", "HOLD")]
     skipped    = [c for c in cards if c.action == "SKIP"]
 
     if not actionable and not skipped:
@@ -169,17 +174,29 @@ def _print_cards(
             f"[dim]  Skipped ({len(skipped)}):  {breakdown}  [{tickers}][/dim]"
         )
 
-    buy_cards = [c for c in cards if c.action == "BUY"]
+    buy_cards  = [c for c in cards if c.action == "BUY"]
+    sell_cards = [c for c in cards if c.action == "SELL"]
+
+    summary_parts = []
+    if sell_cards:
+        total_proceeds = sum(abs(c.delta_dollars or 0.0) for c in sell_cards)
+        summary_parts.append(
+            f"[red]Recommended sells: {len(sell_cards)} "
+            f"| Total proceeds: ${total_proceeds:,.2f} CAD[/red]"
+        )
     if buy_cards:
         total_deploy = sum(c.delta_dollars or 0.0 for c in buy_cards)
-        console.print(
-            f"\n[green]Recommended buys: {len(buy_cards)} "
+        summary_parts.append(
+            f"[green]Recommended buys: {len(buy_cards)} "
             f"| Total deployment: ${total_deploy:,.2f} CAD[/green]"
         )
+
+    if summary_parts:
+        console.print("\n" + "  |  ".join(summary_parts))
         if not saved:
             console.print("[dim]Run with --save to persist these cards and get rec IDs.[/dim]")
     else:
-        console.print("\n[yellow]No BUY recommendations generated.[/yellow]")
+        console.print("\n[yellow]No BUY or SELL recommendations generated.[/yellow]")
 
 
 def _print_weight_comparison(
@@ -323,6 +340,7 @@ def recommend_command(
                 gate_status=card.gate_status.value,
                 rationale=card.gate_reason,
                 run_id=run_id,
+                sell_reason=card.sell_reason,
             )
             card.rec_id = rec_id
 
@@ -365,10 +383,10 @@ def execute_command(
         )
         raise typer.Exit(1)
 
-    if rec["action"] not in ("BUY",):
+    if rec["action"] not in ("BUY", "SELL"):
         console.print(
             f"[red]Recommendation #{rec_id} has action '{rec['action']}' — "
-            "only BUY recommendations can be executed via this command.[/red]"
+            "only BUY and SELL recommendations can be executed via this command.[/red]"
         )
         raise typer.Exit(1)
 
@@ -383,7 +401,7 @@ def execute_command(
 
     trade_id = record_trade(
         ticker=rec["ticker"],
-        side="BUY",
+        side=rec["action"],
         units=units,
         price=price,
         trade_date=exec_date,
@@ -393,12 +411,16 @@ def execute_command(
     mark_recommendation_executed(rec_id, fill_price=price, fill_units=units)
 
     gross = units * price
+    is_sell = rec["action"] == "SELL"
+    action_colour = "red" if is_sell else "green"
+    action_label = rec["action"]
     console.print(Panel(
-        f"[green]BUY[/green]  {rec['ticker']}  {units:.4f} units @ ${price:.2f}  "
+        f"[{action_colour}]{action_label}[/{action_colour}]  "
+        f"{rec['ticker']}  {units:.4f} units @ ${price:.2f}  "
         f"=  ${gross:,.2f} CAD\n"
         f"Date: {exec_date}   Trade ID: #{trade_id}   Rec ID: #{rec_id}",
         title="Trade Executed",
-        border_style="green",
+        border_style=action_colour,
     ))
 
 
@@ -410,23 +432,28 @@ def pending_command() -> None:
         return
 
     table = Table(title=f"Pending Recommendations ({len(rows)})")
-    table.add_column("ID",       justify="right")
+    table.add_column("ID",         justify="right")
     table.add_column("Ticker")
     table.add_column("Bucket")
     table.add_column("Action")
-    table.add_column("Signal",   justify="right")
-    table.add_column("Exp Ret",  justify="right")
+    table.add_column("Sell",       style="dim")
+    table.add_column("Signal",     justify="right")
+    table.add_column("Exp Ret",    justify="right")
     table.add_column("Gate")
-    table.add_column("Run ID",   style="dim")
+    table.add_column("Run ID",     style="dim")
     table.add_column("Generated At", style="dim")
 
     for r in rows:
         exp = f"{r['expected_ret']*100:+.2f}%" if r.get("expected_ret") else "—"
+        sell_reason = r.get("sell_reason") or "—"
+        action = r["action"]
+        action_style = "red" if action == "SELL" else ("green" if action == "BUY" else "")
         table.add_row(
             str(r["id"]),
             r["ticker"],
             r.get("bucket") or "—",
-            r["action"],
+            Text(action, style=action_style),
+            sell_reason,
             f"{r['combined_signal']:+.3f}" if r.get("combined_signal") is not None else "—",
             exp,
             r.get("gate_status") or "—",

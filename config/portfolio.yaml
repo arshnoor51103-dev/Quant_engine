@@ -58,8 +58,8 @@ trading:
 # Rebalance triggers
 # RESERVED: wired up in Phase X — do not remove.
 rebalance:
-  drift_threshold: 0.05      # rebalance bucket if drift > 5%
   scheduled_review: monthly  # 1st market day of each month
+  min_rebalance_trade: 50.0  # drift-SELL minimum dollar correction; below this the spread cost outweighs the benefit
 
 # Within-bucket Markowitz optimizer (Phase 3 P2)
 # Stable bucket always uses equal-weight regardless of these settings.

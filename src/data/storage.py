@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS recommendations (
     bucket        TEXT,
     gate_status   TEXT,
     combined_signal REAL,
-    run_id        TEXT
+    run_id        TEXT,
+    sell_reason   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trades_ticker_side ON trades(ticker, side, trade_date);
 CREATE INDEX IF NOT EXISTS idx_recs_status ON recommendations(status, generated_at);
@@ -129,6 +130,7 @@ def initialize(db_path: Path = DB_PATH) -> None:
         conn.executescript(SCHEMA)
         conn.commit()
     migrate_recommendations_v2(db_path)
+    migrate_recommendations_v3(db_path)
 
 
 def upsert_prices(rows: Iterable[dict], db_path: Path = DB_PATH) -> int:
@@ -305,6 +307,23 @@ def migrate_recommendations_v2(db_path: Path = DB_PATH) -> None:
     _migrated.add(db_path)
 
 
+def migrate_recommendations_v3(db_path: Path = DB_PATH) -> None:
+    """
+    Add sell_reason column to recommendations table if not already present.
+
+    Safe to call on every startup. New column: sell_reason (TEXT, NULL for
+    non-SELL cards, 'SIGNAL' or 'DRIFT' for SELL cards).
+    """
+    with get_connection(db_path) as conn:
+        existing = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
+        }
+        if "sell_reason" not in existing:
+            conn.execute("ALTER TABLE recommendations ADD COLUMN sell_reason TEXT;")
+        conn.commit()
+
+
 def save_recommendation(
     ticker: str,
     action: str,
@@ -316,6 +335,7 @@ def save_recommendation(
     gate_status: str,
     rationale: str | None,
     run_id: str,
+    sell_reason: str | None = None,
     db_path: Path = DB_PATH,
 ) -> int:
     """
@@ -328,12 +348,14 @@ def save_recommendation(
             """
             INSERT INTO recommendations
                 (ticker, action, bucket, target_weight, combined_signal,
-                 expected_ret, cost_estimate, gate_status, rationale, run_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending');
+                 expected_ret, cost_estimate, gate_status, rationale, run_id,
+                 status, sell_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?);
             """,
             (
                 ticker, action, bucket, target_weight, combined_signal,
                 expected_ret, cost_estimate, gate_status, rationale, run_id,
+                sell_reason,
             ),
         )
         conn.commit()

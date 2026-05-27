@@ -48,16 +48,17 @@ class TradeCard:
     """A single trade recommendation card."""
     ticker: str
     bucket: str
-    action: str                       # "BUY" | "HOLD" | "WARN" | "SKIP"
-    units: float | None               # units to buy (fractional, Wealthsimple-compatible)
+    action: str                       # "BUY" | "SELL" | "HOLD" | "WARN" | "SKIP"
+    units: float | None               # units to trade (fractional, Wealthsimple-compatible)
     est_price: float | None           # latest close price in CAD
-    delta_dollars: float | None       # target_value - current_value
+    delta_dollars: float | None       # target_value - current_value (negative for sells)
     combined_signal: float            # momentum × clamped_regime (or 1/n for stable)
     expected_return_pct: float | None # annualized, decimal (0.035 = 3.5%)
     gate_status: GateStatus
     gate_reason: str | None = None
     cost_estimate: float | None = None
     rec_id: int | None = None         # set after DB persist
+    sell_reason: str | None = None    # "SIGNAL" | "DRIFT" | None (BUY/HOLD/SKIP)
 
 
 def _clamped_regime_score(regime_result: SignalResult) -> float:
@@ -180,6 +181,7 @@ def generate_trade_cards(
 
     trading = portfolio_config["trading"]
     alloc_cfg = portfolio_config["allocation"]
+    rebalance_cfg = portfolio_config.get("rebalance", {})
 
     spread_proxy: float = trading.get("spread_proxy", 0.0005)
     anchor_return: float = trading.get("anchor_return_annualized", 0.1398)
@@ -188,6 +190,7 @@ def generate_trade_cards(
     max_trades: int = int(trading.get("max_trades_per_year", 24))
     cra_warn: int = int(trading.get("cra_warn_threshold", 20))
     min_hold: int = int(trading.get("min_holding_days", 14))
+    min_rebalance_trade: float = float(rebalance_cfg.get("min_rebalance_trade", 50.0))
 
     cost_threshold = multiplier * spread_proxy + profit_floor
     opt_cfg = portfolio_config.get("optimizer", {})
@@ -202,7 +205,7 @@ def generate_trade_cards(
 
     holdings_map: dict[str, Holding] = {h.ticker: h for h in holdings}
 
-    # Bucket-level actual allocation for OVERWEIGHT detection
+    # Bucket-level actual allocation for overweight/drift detection
     bucket_actual: dict[str, float] = {b: 0.0 for b in alloc_cfg}
     if total_capital > 0:
         for ticker, h in holdings_map.items():
@@ -210,13 +213,36 @@ def generate_trade_cards(
             if b in bucket_actual:
                 bucket_actual[b] += h.market_value / total_capital
 
+    # Bucket overweight flags: True when actual > target + tolerance (exit tolerance band)
+    bucket_overweight: dict[str, bool] = {
+        b: bucket_actual.get(b, 0.0) > cfg.get("target", 0.0) + cfg.get("tolerance", 0.0)
+        for b, cfg in alloc_cfg.items()
+    }
+
     run_date = momentum_result.run_date
     cards: list[TradeCard] = []
+
+    def _cra_gate(count: int) -> tuple[GateStatus, str | None]:
+        if count >= max_trades:
+            return (
+                GateStatus.CRA_LIMIT,
+                f"{count}/{max_trades} trades used this year — "
+                "recommendation shown; Arsh decides whether to proceed",
+            )
+        if count >= cra_warn:
+            return (
+                GateStatus.CRA_WARN,
+                f"{count}/{max_trades} trades used — "
+                f"{max_trades - count} remaining this year",
+            )
+        return GateStatus.PASS, None
 
     for ticker, target_weight in target_weights.items():
         meta = universe_map[ticker]
         bucket = meta.get("bucket", "unknown")
         combined = combined_scores.get(ticker, 0.0)
+        spread = meta.get("spread_override") or spread_proxy
+        gate_threshold = multiplier * spread + profit_floor
 
         h = holdings_map.get(ticker)
         current_value = h.market_value if h else 0.0
@@ -224,30 +250,129 @@ def generate_trade_cards(
 
         target_value = target_weight * total_capital
         delta = target_value - current_value
-        spread = meta.get("spread_override") or spread_proxy
-        exp_ret = combined * anchor_return if combined > 0.0 else None
 
-        # ── Gate 1: signal direction ──────────────────────────────────────
+        # ── SELL path: signal turned negative on a held position ──────────
         if combined <= 0.0:
-            cards.append(TradeCard(
-                ticker=ticker, bucket=bucket, action="SKIP",
-                units=None, est_price=price, delta_dollars=None,
-                combined_signal=combined, expected_return_pct=None,
-                gate_status=GateStatus.SKIP_SIGNAL,
-                gate_reason="negative or zero combined signal",
-            ))
+            if h and current_value > 0.0:
+                # Full exit — sell all held units
+                units_sell = h.units
+                sell_delta = -current_value
+                sell_exp_ret = abs(combined) * anchor_return
+
+                # Gate: cost gate (symmetric with BUY)
+                if sell_exp_ret < gate_threshold:
+                    cards.append(TradeCard(
+                        ticker=ticker, bucket=bucket, action="SKIP",
+                        units=units_sell, est_price=price, delta_dollars=sell_delta,
+                        combined_signal=combined, expected_return_pct=sell_exp_ret,
+                        gate_status=GateStatus.SKIP_COST,
+                        gate_reason=(
+                            f"sell expected {sell_exp_ret*100:.2f}% < "
+                            f"{gate_threshold*100:.2f}% threshold"
+                        ),
+                        sell_reason="SIGNAL",
+                    ))
+                    continue
+
+                # Gate: min-hold (CRA — avoid rapid round-trips)
+                last_buy = last_buy_dates.get(ticker)
+                if last_buy is not None:
+                    days_held = (run_date - last_buy).days
+                    if days_held < min_hold:
+                        cards.append(TradeCard(
+                            ticker=ticker, bucket=bucket, action="SKIP",
+                            units=units_sell, est_price=price, delta_dollars=sell_delta,
+                            combined_signal=combined, expected_return_pct=sell_exp_ret,
+                            gate_status=GateStatus.MIN_HOLD,
+                            gate_reason=f"bought {days_held}d ago — min hold {min_hold}d (CRA)",
+                            sell_reason="SIGNAL",
+                        ))
+                        continue
+
+                # Gate: CRA annual trade count
+                gate, reason = _cra_gate(annual_trade_count)
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="SELL",
+                    units=units_sell, est_price=price, delta_dollars=sell_delta,
+                    combined_signal=combined, expected_return_pct=sell_exp_ret,
+                    gate_status=gate, gate_reason=reason,
+                    cost_estimate=gate_threshold,
+                    sell_reason="SIGNAL",
+                ))
+            else:
+                # No holding — nothing to sell
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="SKIP",
+                    units=None, est_price=price, delta_dollars=None,
+                    combined_signal=combined, expected_return_pct=None,
+                    gate_status=GateStatus.SKIP_SIGNAL,
+                    gate_reason="negative or zero combined signal",
+                ))
             continue
 
-        # ── Gate 2: no additional buy needed (already at/above target) ────
+        # ── Positive signal: delta <= 0 means at/above target ─────────────
         if delta <= 0.0:
-            b_cfg = alloc_cfg.get(bucket, {})
             b_actual = bucket_actual.get(bucket, 0.0)
+            b_cfg = alloc_cfg.get(bucket, {})
             b_max = b_cfg.get("target", 0.0) + b_cfg.get("tolerance", 0.0)
-            if b_actual > b_max:
+            is_overweight = bucket_overweight.get(bucket, False)
+
+            # Drift-driven SELL: bucket exited tolerance band and this ticker
+            # has more value than its target allocation → partial trim
+            if h and current_value > 0.0 and delta < 0.0 and is_overweight:
+                abs_delta = abs(delta)
+                units_trim = round(abs_delta / price, 2) if price else None
+
+                # Gate: dollar floor (spread cost must be worth the correction)
+                if abs_delta < min_rebalance_trade:
+                    cards.append(TradeCard(
+                        ticker=ticker, bucket=bucket, action="HOLD",
+                        units=None, est_price=price, delta_dollars=delta,
+                        combined_signal=combined,
+                        expected_return_pct=combined * anchor_return,
+                        gate_status=GateStatus.PASS,
+                        gate_reason=(
+                            f"drift correction ${abs_delta:.0f} < "
+                            f"${min_rebalance_trade:.0f} floor"
+                        ),
+                    ))
+                    continue
+
+                # Gate: min-hold (CRA — avoid rapid round-trips)
+                last_buy = last_buy_dates.get(ticker)
+                if last_buy is not None:
+                    days_held = (run_date - last_buy).days
+                    if days_held < min_hold:
+                        cards.append(TradeCard(
+                            ticker=ticker, bucket=bucket, action="SKIP",
+                            units=units_trim, est_price=price, delta_dollars=delta,
+                            combined_signal=combined,
+                            expected_return_pct=combined * anchor_return,
+                            gate_status=GateStatus.MIN_HOLD,
+                            gate_reason=f"bought {days_held}d ago — min hold {min_hold}d (CRA)",
+                            sell_reason="DRIFT",
+                        ))
+                        continue
+
+                # Gate: CRA annual trade count
+                gate, reason = _cra_gate(annual_trade_count)
+                cards.append(TradeCard(
+                    ticker=ticker, bucket=bucket, action="SELL",
+                    units=units_trim, est_price=price, delta_dollars=delta,
+                    combined_signal=combined,
+                    expected_return_pct=combined * anchor_return,
+                    gate_status=gate, gate_reason=reason,
+                    sell_reason="DRIFT",
+                ))
+                continue
+
+            # No sell needed — HOLD or OVERWEIGHT warning
+            if is_overweight:
                 cards.append(TradeCard(
                     ticker=ticker, bucket=bucket, action="WARN",
                     units=None, est_price=price, delta_dollars=delta,
-                    combined_signal=combined, expected_return_pct=exp_ret,
+                    combined_signal=combined,
+                    expected_return_pct=combined * anchor_return,
                     gate_status=GateStatus.OVERWEIGHT,
                     gate_reason=f"bucket {bucket} at {b_actual*100:.1f}% > {b_max*100:.1f}% max",
                 ))
@@ -255,17 +380,18 @@ def generate_trade_cards(
                 cards.append(TradeCard(
                     ticker=ticker, bucket=bucket, action="HOLD",
                     units=None, est_price=price, delta_dollars=delta,
-                    combined_signal=combined, expected_return_pct=exp_ret,
+                    combined_signal=combined,
+                    expected_return_pct=combined * anchor_return,
                     gate_status=GateStatus.PASS,
                     gate_reason="at or above target weight",
                 ))
             continue
 
+        # ── BUY path: positive signal, capital needed ─────────────────────
+        exp_ret = combined * anchor_return
         units = delta / price if price else None
 
-        # ── Gate 2b: rebalance threshold (optimizer mode only) ────────────
-        # Suppress trade cards when the weight change is too small to justify
-        # burning a trade slot. Only active when optimized_weights are supplied.
+        # Gate: rebalance threshold (optimizer mode only)
         if (
             optimized_weights is not None
             and rebalance_threshold > 0.0
@@ -286,9 +412,8 @@ def generate_trade_cards(
                 ))
                 continue
 
-        # ── Gate 3: cost gate ─────────────────────────────────────────────
-        gate_threshold = multiplier * spread + profit_floor
-        if exp_ret is not None and exp_ret < gate_threshold:
+        # Gate: cost gate
+        if exp_ret < gate_threshold:
             cards.append(TradeCard(
                 ticker=ticker, bucket=bucket, action="SKIP",
                 units=units, est_price=price, delta_dollars=delta,
@@ -300,7 +425,7 @@ def generate_trade_cards(
             ))
             continue
 
-        # ── Gate 4: minimum holding days ─────────────────────────────────
+        # Gate: min-hold
         last_buy = last_buy_dates.get(ticker)
         if last_buy is not None:
             days_held = (run_date - last_buy).days
@@ -314,23 +439,8 @@ def generate_trade_cards(
                 ))
                 continue
 
-        # ── Gate 5: CRA annual trade count ───────────────────────────────
-        if annual_trade_count >= max_trades:
-            gate = GateStatus.CRA_LIMIT
-            reason = (
-                f"{annual_trade_count}/{max_trades} trades used this year — "
-                "recommendation shown; Arsh decides whether to proceed"
-            )
-        elif annual_trade_count >= cra_warn:
-            gate = GateStatus.CRA_WARN
-            reason = (
-                f"{annual_trade_count}/{max_trades} trades used — "
-                f"{max_trades - annual_trade_count} remaining this year"
-            )
-        else:
-            gate = GateStatus.PASS
-            reason = None
-
+        # Gate: CRA annual trade count
+        gate, reason = _cra_gate(annual_trade_count)
         cards.append(TradeCard(
             ticker=ticker, bucket=bucket, action="BUY",
             units=units, est_price=price, delta_dollars=delta,
@@ -339,7 +449,7 @@ def generate_trade_cards(
             cost_estimate=gate_threshold,
         ))
 
-    # BUY cards first (by delta desc), then WARN, then HOLD, then SKIP
-    _order = {"BUY": 0, "WARN": 1, "HOLD": 2, "SKIP": 3}
-    cards.sort(key=lambda c: (_order.get(c.action, 9), -(c.delta_dollars or 0.0)))
+    # SELL first (risk-reduction), then BUY, then WARN, then HOLD, then SKIP
+    _order = {"SELL": 0, "BUY": 1, "WARN": 2, "HOLD": 3, "SKIP": 4}
+    cards.sort(key=lambda c: (_order.get(c.action, 9), -(abs(c.delta_dollars or 0.0))))
     return cards
