@@ -5,10 +5,12 @@ Commands: `quant recommend`, `quant execute`, `quant pending`
 """
 from __future__ import annotations
 
+import json
 import uuid
 from collections import Counter
 from datetime import date
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -19,14 +21,17 @@ from ..data.ingest import load_universe
 from ..data.storage import (
     get_all_last_buy_dates,
     get_annual_trade_count,
+    get_last_alert,
     get_recommendation_by_id,
     list_pending_recommendations,
+    log_alert,
     mark_recommendation_executed,
     mark_recommendation_skipped,
     persist_signals,
     record_trade,
     save_recommendation,
 )
+from ..portfolio.metrics import max_drawdown
 from ..portfolio.model import (
     get_holdings,
     load_portfolio_config,
@@ -43,6 +48,7 @@ from ..portfolio.recommendations import (
     compute_combined_scores,
     generate_trade_cards,
 )
+from ..alerts.ntfy import send_alert
 from ..signals.momentum import MomentumSignal
 from ..signals.vol_regime import VolRegimeSignal
 
@@ -233,11 +239,113 @@ def _print_weight_comparison(
     console.print(table)
 
 
+def _portfolio_nav_series(
+    holdings: list,
+    price_data: dict[str, pd.Series],
+) -> pd.Series:
+    """
+    Weighted NAV series summed across all currently held tickers.
+
+    Uses full price history (no lookback truncation). Aligns on the
+    intersection of dates where all held tickers have price data.
+    Returns an empty Series if no holdings match any price data.
+    """
+    frames = []
+    for h in holdings:
+        if h.ticker in price_data and not price_data[h.ticker].empty:
+            frames.append(price_data[h.ticker] * h.units)
+    if not frames:
+        return pd.Series(dtype=float)
+    combined = pd.concat(frames, axis=1)
+    return combined.dropna().sum(axis=1)
+
+
+def _run_alert_triggers(
+    cards: list[TradeCard],
+    regime_name: str,
+    portfolio_cfg: dict,
+    holdings: list,
+    price_data: dict[str, pd.Series],
+) -> None:
+    """
+    Evaluate the three alert triggers and POST to ntfy.sh where warranted.
+
+    Called from recommend_command when --notify is set. All HTTP failures
+    are swallowed inside send_alert — this function never raises.
+    """
+    alerts_cfg = portfolio_cfg.get("alerts", {})
+    if not alerts_cfg.get("enabled"):
+        return
+
+    topic: str = alerts_cfg["ntfy_topic"]
+    triggers: set[str] = set(alerts_cfg.get("triggers") or [])
+
+    # NEW_RECOMMENDATION — fire when ≥1 card passes all gates
+    if "NEW_RECOMMENDATION" in triggers:
+        passing = [
+            c for c in cards
+            if c.action in ("BUY", "SELL") and c.gate_status == GateStatus.PASS
+        ]
+        if passing:
+            body = "\n".join(
+                f"{c.action} {c.ticker}  signal={c.combined_signal:+.3f}"
+                f"  exp={c.expected_return_pct:.1%}"
+                for c in passing
+            )
+            send_alert(topic, "New Recommendation", body,
+                       tags=["chart_with_upwards_trend"])
+            log_alert("NEW_RECOMMENDATION", json.dumps(
+                [{"ticker": c.ticker, "action": c.action,
+                  "signal": round(c.combined_signal, 4)} for c in passing]
+            ))
+
+    # REGIME_CHANGE — fire when vol regime shifts from last persisted value
+    if "REGIME_CHANGE" in triggers:
+        last = get_last_alert("REGIME_CHANGE")
+        last_regime = json.loads(last["payload"]).get("regime") if last else None
+        if last_regime != regime_name:
+            send_alert(
+                topic, "Regime Change",
+                f"{(last_regime or 'unknown').upper()} → {regime_name.upper()}",
+                priority=4, tags=["warning"],
+            )
+            log_alert("REGIME_CHANGE",
+                      json.dumps({"regime": regime_name, "previous": last_regime}))
+
+    # DRAWDOWN — transition detector.
+    # Fires once on first crossing above drawdown_alert threshold.
+    # Logs a RECOVERED row (no POST) when portfolio returns below threshold,
+    # enabling the next crossing to fire again.
+    if "DRAWDOWN_WARNING" in triggers:
+        threshold: float = portfolio_cfg["risk"]["drawdown_alert"]
+        nav_series = _portfolio_nav_series(holdings, price_data)
+        current_dd = abs(max_drawdown(nav_series)) if not nav_series.empty else 0.0
+
+        last = get_last_alert("DRAWDOWN")
+        last_payload = json.loads(last["payload"]) if (last and last["payload"]) else {}
+        last_status = last_payload.get("status", "RECOVERED")  # absent = never fired
+
+        if current_dd > threshold and last_status == "RECOVERED":
+            send_alert(
+                topic, "Drawdown Warning",
+                f"Portfolio drawdown {current_dd:.1%} — alert threshold {threshold:.0%}",
+                priority=5, tags=["rotating_light"],
+            )
+            log_alert("DRAWDOWN",
+                      json.dumps({"status": "WARNING", "drawdown": round(current_dd, 4)}))
+        elif current_dd <= threshold and last_status == "WARNING":
+            log_alert("DRAWDOWN",
+                      json.dumps({"status": "RECOVERED", "drawdown": round(current_dd, 4)}))
+
+
 def recommend_command(
     cash: float = typer.Option(0.0, "--cash", help="New cash to deploy in CAD"),
     save: bool = typer.Option(False, "--save", help="Persist recommendations to DB"),
     optimize: bool = typer.Option(
         False, "--optimize", help="Use Markowitz within-bucket optimizer instead of equal-weight"
+    ),
+    notify: bool = typer.Option(
+        False, "--notify", help="Send ntfy.sh push alerts for actionable events"
     ),
 ) -> None:
     """
@@ -355,6 +463,9 @@ def recommend_command(
         max_trades=max_trades,
         n_signal_rows=n_signal_rows,
     )
+
+    if notify:
+        _run_alert_triggers(cards, regime_name, portfolio_cfg, holdings, price_data)
 
 
 def execute_command(
