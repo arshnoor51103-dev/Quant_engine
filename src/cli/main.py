@@ -22,6 +22,7 @@ from ..data.storage import initialize, record_trade
 from ..portfolio.model import (
     bucket_allocation,
     get_holdings,
+    load_portfolio_config,
     nav,
     price_series,
 )
@@ -33,6 +34,7 @@ from .phase3_commands import (
     pending_command,
     skip_command,
 )
+from ..alerts.ntfy import send_alert
 
 app = typer.Typer(add_completion=False, help="Quant Engine CLI")
 console = Console()
@@ -205,6 +207,18 @@ def trade(
     if rationale:
         summary += f"\nNote: {rationale}"
     console.print(Panel(summary, title="Trade Recorded", border_style=colour))
+
+
+@app.command(name="alert-test")
+def alert_test() -> None:
+    """Send a test ping to the configured ntfy.sh topic."""
+    cfg = load_portfolio_config().get("alerts", {})
+    if not cfg.get("enabled"):
+        console.print("[yellow]alerts.enabled is false in portfolio.yaml — nothing sent.[/yellow]")
+        return
+    topic = cfg["ntfy_topic"]
+    send_alert(topic, "Quant Engine", "Alert test — system is live")
+    console.print(f"[green]Test alert sent → https://ntfy.sh/{topic}[/green]")
 
 
 app.command(name="signals")(signals_command)
