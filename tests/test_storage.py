@@ -9,6 +9,7 @@ All tests use a fresh in-memory SQLite DB so they run offline and fast.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
@@ -17,8 +18,10 @@ import pytest
 
 from src.data.storage import (
     get_annual_trade_count,
+    get_last_alert,
     get_last_buy_date,
     initialize,
+    log_alert,
     mark_recommendation_executed,
     mark_recommendation_skipped,
     migrate_recommendations_v2,
@@ -248,3 +251,38 @@ def test_mark_recommendation_skipped(tmp_db: Path) -> None:
     row = conn.execute("SELECT status FROM recommendations WHERE id=?;", (rec_id,)).fetchone()
     conn.close()
     assert row["status"] == "skipped"
+
+
+# ─── alerts_log: get_last_alert / log_alert ───────────────────────────────────
+
+def test_get_last_alert_returns_none_when_empty(tmp_db: Path) -> None:
+    """No rows for a given alert_type → None, not an error."""
+    assert get_last_alert("NEW_RECOMMENDATION", db_path=tmp_db) is None
+
+
+def test_log_and_get_last_alert_roundtrip(tmp_db: Path) -> None:
+    """log_alert inserts a row; get_last_alert returns it with correct payload."""
+    import json
+    payload = json.dumps({"regime": "HIGH_VOL", "previous": "NORMAL"})
+    row_id = log_alert("REGIME_CHANGE", payload, db_path=tmp_db)
+    assert isinstance(row_id, int) and row_id > 0
+    result = get_last_alert("REGIME_CHANGE", db_path=tmp_db)
+    assert result is not None
+    assert result["alert_type"] == "REGIME_CHANGE"
+    assert json.loads(result["payload"])["regime"] == "HIGH_VOL"
+
+
+def test_get_last_alert_returns_most_recent(tmp_db: Path) -> None:
+    """When multiple rows exist for the same type, returns the newest."""
+    import json
+    log_alert("DRAWDOWN", json.dumps({"status": "WARNING",   "drawdown": 0.17}), db_path=tmp_db)
+    log_alert("DRAWDOWN", json.dumps({"status": "RECOVERED", "drawdown": 0.12}), db_path=tmp_db)
+    result = get_last_alert("DRAWDOWN", db_path=tmp_db)
+    assert json.loads(result["payload"])["status"] == "RECOVERED"
+
+
+def test_get_last_alert_does_not_cross_alert_types(tmp_db: Path) -> None:
+    """Rows for REGIME_CHANGE must not appear in DRAWDOWN queries."""
+    import json
+    log_alert("REGIME_CHANGE", json.dumps({"regime": "NORMAL"}), db_path=tmp_db)
+    assert get_last_alert("DRAWDOWN", db_path=tmp_db) is None

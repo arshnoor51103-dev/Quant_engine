@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS signal_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_signal_scores_ticker
     ON signal_scores(ticker, run_date DESC);
+
+CREATE TABLE IF NOT EXISTS alerts_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_type  TEXT    NOT NULL,
+    fired_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    payload     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_log_type
+    ON alerts_log(alert_type, fired_at DESC);
 """
 
 
@@ -533,3 +542,35 @@ def query_signal_history(
     with get_connection(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_last_alert(alert_type: str, db_path: Path = DB_PATH) -> dict | None:
+    """
+    Return the most recent alerts_log row for alert_type, or None.
+
+    Used by trigger checks to detect state transitions — e.g. whether the
+    last DRAWDOWN row has status WARNING or RECOVERED.
+    """
+    sql = """
+    SELECT id, alert_type, fired_at, payload
+    FROM alerts_log
+    WHERE alert_type = ?
+    ORDER BY fired_at DESC, id DESC
+    LIMIT 1;
+    """
+    with get_connection(db_path) as conn:
+        row = conn.execute(sql, (alert_type,)).fetchone()
+    return dict(row) if row is not None else None
+
+
+def log_alert(alert_type: str, payload: str, db_path: Path = DB_PATH) -> int:
+    """
+    Insert a row into alerts_log and return the new row id.
+
+    Called both when an ntfy POST fires (alert sent) and when a recovery
+    state is recorded with no POST (DRAWDOWN transition bookkeeping only).
+    """
+    sql = "INSERT INTO alerts_log (alert_type, payload) VALUES (?, ?);"
+    with get_connection(db_path) as conn:
+        cur = conn.execute(sql, (alert_type, payload))
+        return cur.lastrowid
