@@ -20,6 +20,9 @@ statsmodels>=0.14.0
 # Optimizer (for Phase 3 P2 — Ledoit-Wolf covariance shrinkage)
 scikit-learn>=1.4.0
 
+# HTTP (for ntfy.sh alerts — Phase 3 P3.5)
+requests>=2.31.0
+
 # API + dashboard
 fastapi>=0.111.0
 uvicorn>=0.30.0
