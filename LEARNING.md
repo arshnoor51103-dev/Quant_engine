@@ -19,6 +19,15 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-27 — Phase 3 P3.5: ntfy.sh phone alert pipeline
+**Context**: `quant recommend` was purely a terminal tool. No notification fires when signals trigger while the operator is away from the computer.
+**Decision**: ntfy.sh one-way push alerts (confirmed from 2026-05-20 decision). Three triggers wired into `recommend_command --notify`:
+- `NEW_RECOMMENDATION`: fires when ≥1 gate-passing BUY or SELL card is produced.
+- `REGIME_CHANGE`: fires when the vol regime value shifts from the last persisted row in `alerts_log`.
+- `DRAWDOWN` (config key `DRAWDOWN_WARNING`): transition detector — fires once on first crossing above 15% alert threshold; logs a RECOVERED row (no POST) when portfolio returns below threshold, enabling re-fire on the next crossing.
+**Implementation**: `src/alerts/ntfy.py` (HTTP transport only, fire-and-forget); `alerts_log` SQLite table + `get_last_alert` / `log_alert` in `storage.py`; `_run_alert_triggers()` private helper in `phase3_commands.py`; `--notify` flag on `quant recommend`; `quant alert-test` command. `requests>=2.31.0` added. 16 new tests (4 transport + 4 storage + 8 trigger).
+**Key invariant**: `send_alert` never raises — network failure logs a WARNING and returns. Recommendation pipeline integrity is not conditional on ntfy.sh availability.
+
 ### 2026-05-26 — Phase 3 SELL and Rebalance Logic
 **Context**: Phase 3 P0 shipped BUY-only recommendations. The portfolio could accumulate positions that turned negative (signal-driven exits) or let bucket weights drift past tolerance bands (drift-triggered trims) without any way to reduce them. Lifted the BUY-only constraint.
 **Design decisions locked (grill-me session 2026-05-26)**:

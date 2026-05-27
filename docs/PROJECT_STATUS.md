@@ -35,6 +35,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 3 SELL/Rebalance | ✅ Complete (2026-05-26) | Signal-driven full exit + drift-triggered partial trim, sell_reason field, schema migration, 16 new tests |
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
+| Phase 3 P3.5 — ntfy.sh Alerts | ✅ Complete (2026-05-27) | --notify flag on recommend, 3 triggers, alerts_log table, quant alert-test, 16 tests |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -438,4 +439,4 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 
 ---
 
-*Last updated: 2026-05-26. Phase 3 SELL/Rebalance complete. Signal-driven full exit + drift-triggered partial trim. sell_reason field + schema migration. 16 new tests. 159/159 passing. Branch: phase-3/sell-rebalance-logic.*
+*Last updated: 2026-05-27. Phase 3 P3.5 — ntfy.sh alert pipeline complete. 3 triggers (NEW_RECOMMENDATION, REGIME_CHANGE, DRAWDOWN_WARNING), alerts_log table, quant alert-test command. 16 new tests. 175/175 passing (174 + 1 DB-skipped).*
