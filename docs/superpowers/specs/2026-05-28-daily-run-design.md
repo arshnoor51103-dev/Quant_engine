@@ -24,7 +24,7 @@ One subprocess layer: DailyRunner → four CLI steps. No nesting beyond that.
 src/cli/daily_run_command.py   ← DailyRunner class + daily_run_command() typer function
 scripts/daily_run.py           ← sys.path bootstrap, reads config, calls DailyRunner(log_target=dated_path)
 scripts/daily_run.bat          ← PYTHONUTF8=1, activate .venv, run daily_run.py >> logs\bat.log 2>&1
-scripts/setup_scheduler.ps1   ← Register-ScheduledTask, dual trigger, no WakeToRun
+scripts/setup_scheduler.ps1   ← Register-ScheduledTask, dual trigger, WakeToRun ON
 tests/test_daily_run.py        ← 8 unit tests, mocks subprocess.run
 src/cli/main.py                ← +1 line: app.command("daily-run")(daily_run_command)
 config/portfolio.yaml          ← new daily_run: block
@@ -161,12 +161,17 @@ if __name__ == "__main__":
 **Task name:** `QuantEngine-DailyRun`
 
 **Triggers (both registered):**
-1. Daily at 18:00 local time
+1. Daily at a configurable time — set via `$RunTime` at the top of the script:
+   ```powershell
+   # TSX closes 1:00 PM PT. Pick one:
+   $RunTime = "06:00"   # morning pre-market — catches overnight data, runs before market open
+   # $RunTime = "13:30" # post-close — data settled 30 min after TSX close
+   ```
 2. At logon (secondary fallback for missed runs)
 
 **Settings:**
-- `-StartWhenAvailable` — fires on next machine wake if the 18:00 trigger was missed
-- `-WakeToRun $false` — **explicit**: laptop must never be woken for this task (thermal/hibernate risk in a closed bag)
+- `-StartWhenAvailable` — fires on next machine wake if the daily trigger was missed
+- `-WakeToRun $true` — laptop runs plugged in at home, lid open, set to do-nothing on lid close — safe to wake for a fixed-time run
 - `-RunOnlyIfNetworkAvailable` — yfinance fetch requires internet
 - `-ExecutionTimeLimit (New-TimeSpan -Minutes 30)`
 - `-MultipleInstances IgnoreNew`
