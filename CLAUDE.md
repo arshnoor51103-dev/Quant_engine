@@ -171,6 +171,9 @@ Key rules:
 **quant-research skill upgrade (2026-05-24). 4-agent parallel pipeline (Academic + Practitioner + Replication/Criticism + inline Synthesis). Expanded DEEPER_LEARNING entry template with Evidence Quality, Source Coverage, Replication Evidence, Practitioner Consensus sections.**
 **H005 — RSI(21) > 50 momentum filter (2026-05-26). KILLED. Backtest confirmed mathematical near-redundancy: 96.2% agreement with momentum (9-ETF), t=NaN incremental alpha. Divergence analysis: gate suppressed +7.30% forward-return signals. All 3 kill criteria triggered. DL-012. Autopsy: `docs/research/graveyard/H005_rsi_momentum_filter.md`.**
 **H006 — Volume spike as regime indicator (2026-05-26). SHELVED. Council: STRONG_CONSENSUS. Three ETF failure modes: creation/redemption noise contamination, absent visibility mechanism, Baker & Stein direction inversion at portfolio-aggregate level. 93% factor zoo failure rate for liquidity signals. Re-evaluate at Tier 2+ with individual equities. DL-013.**
+**H004 — Volatility targeting / Moreira-Muir scaling (2026-05-28). KILLED. 2 of 6 kill criteria triggered: (1) leverage effect absent — all 7 equity ETFs show positive Corr(fwd_ret, RV) on 2021-2026 data, invalidating Moreira-Muir's mathematical precondition; (2) monthly return correlation with equal-weight baseline = 0.9862, near-zero portfolio differentiation. Graveyard: `docs/research/graveyard/H004_vol_targeting.md`. Research script: `docs/research/scratch/H004_vol_targeting_backtest.py`.**
+
+**Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22) · H004 (graveyard — vol targeting / Moreira-Muir, KILLED 2026-05-28) · H005 (graveyard — RSI(21) momentum filter, KILLED 2026-05-26) · H006 (SHELVED — volume spike regime indicator, re-evaluate Tier 2+)
 
 ### Phase 3 P0 decisions locked in CLAUDE.md:
 - **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
@@ -186,4 +189,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: 2026-05-26. H005 backtest complete — KILLED (t=NaN/−1.00, 96.2% momentum agreement, gate suppresses +7.30% valid signals). H005 graveyard autopsy written. H006 (volume spike regime, SHELVED, DL-013). H003 (residual reversal, SHELVED Tier 2+) and H004 (vol targeting, CANDIDATE) still pending backtest.*
+*Last updated: 2026-05-28. H004 (vol targeting, Moreira-Muir) KILLED — leverage effect absent 7/7 ETFs, monthly return corr with baseline 0.9862. H005 (RSI(21) filter) KILLED — DL-014 supersedes DL-012 with backtest evidence. Both graveyard entries written. H006 (SHELVED). v0.7.0-hypothesis-cleanup tagged.*

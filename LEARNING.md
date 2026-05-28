@@ -19,6 +19,71 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-28 — H004 (vol targeting) and H005 (RSI filter) hypothesis cleanup: both KILLED
+
+**Context**: Two hypotheses at CANDIDATE status with mandatory backtests pending. H004 (Moreira-Muir portfolio-level vol scaling, DL-007) had no hypothesis file yet. H005 (RSI(21) > 50 momentum gate, DL-012) was already KILLED with backtest results recorded but two deliverables missing: LEARNING.md result table and DL-012 supersession.
+
+**H004 — Volatility Targeting (Moreira-Muir Scaling). KILLED. 2 of 6 kill criteria triggered.**
+
+Backtest: 5yr walk-forward 2021-05-28 to 2026-05-28, top-4 equity selection, monthly rebalance. Vol scaling applied to portfolio weights after signal ranking (not to signal scores — rank order preserved). Equity bucket only (7 tickers: VFV/XIC/HXQ/XEF/CHPS/CDZ/VDY).
+
+Pre-backtest checks:
+| Check | Result |
+|-------|--------|
+| Leverage effect: Corr(fwd_ret, RV) sign | All 7/7 equity ETFs POSITIVE (+0.03 to +0.30). Kill criterion triggered. |
+| Corr(vol_regime_score, portfolio_RV) | -0.3478. PASS (threshold |corr| > 0.85). |
+| 21d RV vs EWMA Sharpe delta | -0.024 (EWMA loses marginally). PASS (threshold > 0.10). |
+
+Walk-forward results:
+| Metric | Vol-Target (RV21) | Equal-Weight Baseline | Pass/Fail |
+|--------|-------------------|-----------------------|-----------|
+| Sharpe | 1.0623 | 0.9768 | PASS |
+| Max DD | -17.28% | -18.20% | PASS |
+| Alpha vs VFV | +4.94% | +4.05% | PASS |
+| Corr vs baseline (monthly returns) | 0.9862 | -- | **KILL** |
+
+Kill criteria triggered:
+1. **Leverage effect absent (7/7 positive)**: Moreira-Muir's precondition is Corr(E[r_{t+1}], sigma^2_t) < 0. All equity ETFs show the opposite on 2021-2026 data. COVID recovery + AI boom produced high-vol months followed by rallies, not drawdowns. Formula has no theoretical basis when the leverage effect is inverted.
+2. **Returns correlation 0.9862**: Vol-targeted strategy is operationally indistinguishable from equal-weight baseline. Scaling within the same top-4 tickers without changing selection produces near-zero portfolio-level differentiation.
+
+Structural failure on leverage effect (not parameter issue). Revisit at Tier 2+ if Corr(fwd_ret, RV) turns negative on Canadian individual equities.
+
+Files: `docs/research/hypotheses/H004_vol_targeting.md` (KILLED), `docs/research/graveyard/H004_vol_targeting.md` (autopsy), `docs/research/scratch/H004_vol_targeting_backtest.py` (research script).
+
+---
+
+**H005 — RSI(21) > 50 Momentum Filter. KILLED. 3 of 3 kill criteria triggered.** (Backtest run 2026-05-26; deliverables completed 2026-05-28.)
+
+Backtest results (from `tests/test_H005_rsi_backtest.py`, code `src/signals/rsi.py`):
+
+Window 1 — 9-ETF universe (2023-07 to 2026-04, 34 months):
+| Metric | Baseline (no gate) | + RSI(21) monthly | + EMA(12) monthly | Pass/Fail |
+|--------|-------------------|-------------------|-------------------|-----------|
+| Sharpe | 1.86 | 1.86 | 1.86 | -- |
+| t-stat (incremental alpha) | -- | **NaN** (zero variance) | -1.09 | **KILL** (need > 3.0) |
+| Agreement rate (mom vs gate) | -- | 96.2% | 92.0% | **KILL** (< 0.81 means gate matters; > means redundant) |
+
+Window 2 -- 8-ETF extended (no CHPS.TO, 2017-06 to 2026-04, 107 months):
+| Metric | Baseline (no gate) | + RSI(21) monthly | + EMA(12) monthly | Pass/Fail |
+|--------|-------------------|-------------------|-------------------|-----------|
+| Sharpe | 1.11 | 1.11 | 1.10 | -- |
+| t-stat (incremental alpha) | -- | **-1.00** | -1.53 | **KILL** |
+| Agreement rate | -- | 83.5% | 83.8% | **KILL** |
+
+Divergence analysis (8-ETF extended) -- when momentum says BUY but gate says NO:
+| Gate | Mom=ON, Gate=OFF forward return | Both=ON forward return |
+|------|--------------------------------|------------------------|
+| RSI(21) monthly | **+7.30%** | +1.02% |
+| EMA(12) monthly | +2.08% | +1.00% |
+
+Kill criteria triggered: (1) t-stat NaN/−1.00 (need > 3.0); (2) gate suppresses valid signals (+7.30% forward return when blocked); (3) 96.2%/83.5% agreement rate (mathematical redundancy confirmed empirically).
+
+Structural failure: RSI(21) at monthly frequency is a bounded monotonic transform of the same positive-drift construct as 12-1 momentum. Marshall et al. 0.81-0.91 correlation prediction confirmed. No parameter tuning (period or threshold) fixes this -- the mathematical equivalence is structural.
+
+Files: `docs/research/hypotheses/H005_rsi_momentum_filter.md` (KILLED), `docs/research/graveyard/H005_rsi_momentum_filter.md` (autopsy), `src/signals/rsi.py` (preserved, not in signal path), `tests/test_rsi_signal.py`, `tests/test_H005_rsi_backtest.py`.
+
+---
+
 ### 2026-05-28 — Phase 3 P3.7: Test coverage pass
 
 **Context**: Three known gaps in the test suite since Phase 2: (1) no test asserting the backtest engine actually holds tickers (avg_holdings_per_period > 0), only that it runs without error; (2) no test for BacktestResult.summary_str(), which didn't exist yet; (3) no integration test joining all three pipeline layers (signal → backtest → recommend). Additionally, two DRAWDOWN/REGIME_CHANGE alert state-machine paths were untested: the first-run case where get_last_alert() returns None.

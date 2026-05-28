@@ -1747,3 +1747,91 @@ Baker & Stein (2004) establish that high aggregate turnover LEVEL predicts lower
 - Related DEEPER_LEARNING entries: DL-011 (VWSR — adjacent idea preserved in that entry; same ETF volume contamination failure mode); DL-007 (volatility targeting — the vol_regime_score that currently serves regime detection; Baker & Stein aggregate turnover could complement this if pursued as a bearish overlay); DL-012 (H005 RSI momentum filter — shares the pattern of practitioner silence and ETF inapplicability)
 - Related LEARNING.md entries: H006 hypothesis file in docs/research/hypotheses/
 - Supersedes: N/A
+
+---
+
+## DL-014: RSI(21) > 50 Momentum Filter — Backtest Confirmation (Supersedes DL-012)
+
+**Date:** 2026-05-28
+**Classification:** ALGO_CHECK
+**Status:** REJECTED (empirically confirmed; supersedes DL-012 CANDIDATE status)
+**Council Convergence:** STRONG_CONSENSUS — pre-backtest prediction confirmed by data
+**Evidence Quality:** Strong (empirical confirmation of prior mathematical prediction)
+**Relevant Phase:** H005 closed — graveyard
+
+### What This Entry Does
+
+DL-012 (2026-05-26) classified RSI(21) > 50 as CANDIDATE with mandatory backtest gate.
+The backtest was run 2026-05-26 and all 3 kill criteria triggered. DL-012 is append-only
+and is not modified. This entry records the backtest confirmation and closes the hypothesis.
+
+Per DL-012 rules: DL-012 remains as the research record. This entry supersedes its
+CANDIDATE status to REJECTED and adds the empirical backtest evidence.
+
+### Backtest Evidence (specific values per flag requirement)
+
+**Window 1: 9-ETF universe (2023-07 to 2026-04, 34 months)**
+
+| Arm | t-stat (incremental alpha vs baseline) | Agreement rate with momentum |
+|-----|---------------------------------------|------------------------------|
+| RSI(21) monthly gate | **NaN** (zero incremental variance — identical portfolio every period) | **96.2%** |
+| EMA(12) monthly gate | -1.09 | 92.0% |
+
+t = NaN means RSI(21) monthly produced an identical portfolio to baseline across all 34
+months — the gate never changed the selection. Zero incremental variance, not just low
+t-stat. The Harvey et al. (2016) t > 3.0 bar is infinitely far from being met.
+
+**Window 2: 8-ETF extended (no CHPS.TO, 2017-06 to 2026-04, 107 months)**
+
+| Arm | t-stat | Agreement rate |
+|-----|--------|----------------|
+| RSI(21) monthly gate | **-1.00** | **83.5%** |
+| EMA(12) monthly gate | -1.53 | 83.8% |
+
+Negative t-stat: RSI(21) gate produces marginally WORSE alpha than the ungated baseline,
+not better. Agreement rate 83.5% confirms Marshall et al.'s 0.81-0.91 prediction directly.
+
+**Divergence sub-period analysis (8-ETF extended):**
+When momentum score > 0 (BUY signal) but RSI(21) gate = OFF (5 occurrences):
+- Forward 1-month return: **+7.30%**
+- Baseline "both-ON" forward return: +1.02%
+
+The gate suppresses valid momentum signals at a cost of +7.30% forward return per blocked
+position. The gate is not filtering noise — it is blocking the highest-conviction momentum
+entries, because RSI(21) SMMA is slower to recover from a drawdown than the raw 12-1 month
+return. A ticker completing a recovery shows positive 12-1 momentum before RSI(21) catches up.
+
+### Why the Council's Pre-Backtest Prediction Was Correct
+
+DL-012's mathematical analysis predicted 0.81-0.91 correlation (from Marshall et al. 2017).
+Empirical result: 83.5-96.2% agreement. The prediction was accurate. The Mathematician's
+statement that RSI(21) > 50 is "a bounded monotonic transform of the same positive-drift
+construct as the existing momentum_score" was confirmed with precision. This is the correct
+use of the research pipeline: mathematical analysis predicts the result; backtest confirms it;
+no implementation work was done before confirmation.
+
+### What Remains Valid from DL-012
+
+The following DL-012 content is not superseded and remains accurate:
+- The mathematical specification of Wilder SMMA RSI
+- The Marshall et al. (2017) TSMOM/MA correlation evidence (0.81-0.91)
+- The factor zoo analysis (RSI absent from all three major studies)
+- The practitioner consensus (10/10 institutional sources do not use RSI as momentum gate)
+- The comparison arm finding: price > EMA(12) is structurally simpler and better-grounded
+  than RSI(21) > 50, but EMA(12) also failed t > 3.0 (t = -1.53 on extended window)
+
+### Conclusion for Future Research
+
+The baseline momentum signal without any gate is the validated current specification.
+No RSI-family indicator at monthly frequency adds incremental alpha on this universe.
+Any future proposal to gate momentum signals at monthly rebalance frequency must demonstrate
+t > 3.0 on the incremental Sharpe and a positive divergence sub-period forward return before
+Council review — both conditions H005 failed. RSI(14) daily was tested as a comparison arm
+and also failed (t = -2.63 on extended window, inferior to RSI(21) monthly despite higher
+gate variance).
+
+### Cross-References
+- Supersedes: DL-012 (RSI(21) > 50 as Momentum Confirmation Filter — CANDIDATE status closed)
+- Related DEEPER_LEARNING entries: DL-001 (momentum — the baseline signal confirmed as superior to gated variants); DL-007 (vol targeting — separate hypothesis, same pattern of modifier failing to add alpha to existing signal); DL-013 (volume spike — same practitioner silence and ETF inapplicability pattern)
+- Related hypothesis files: docs/research/graveyard/H005_rsi_momentum_filter.md (full autopsy); docs/research/hypotheses/H005_rsi_momentum_filter.md (cross-reference)
+- Related LEARNING.md entries: 2026-05-28 H004/H005 hypothesis cleanup entry
