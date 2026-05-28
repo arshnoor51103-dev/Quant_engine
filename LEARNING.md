@@ -19,6 +19,12 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-28 — Phase 3 P3.6: Scheduled daily run
+**Context**: Engine signals and recommendations were only generated when the operator manually ran `quant recommend`. No automation existed — daily data fetch and signal generation required manual CLI invocation.
+**Decision**: DailyRunner class in `src/cli/daily_run_command.py` orchestrates four CLI steps (fetch → momentum signal → vol_regime signal → recommend --optimize --save --notify) via subprocess. Runs all steps regardless of individual failures (fail-fast would skip the recommend step if a signal step errored). Error alerts via ntfy.sh at priority=5 on any step failure. Two callers: `scripts/daily_run.py` (Task Scheduler entry point, writes dated log) and `quant daily-run` (interactive manual trigger, stdout only). Windows Task Scheduler registered via `scripts/setup_scheduler.ps1` with dual triggers: daily at configurable time (morning or post-close, commented variable at top) and at-logon fallback. `-WakeToRun ON`, `-StartWhenAvailable ON` so laptop (plugged in, lid open at home) wakes for the scheduled run. `logs/bat.log` overwritten each run (startup failures only); `logs/YYYY-MM-DD.log` appended (DailyRunner owns signal output and trade cards).
+**Key invariant**: All state persisted via `--save` flags on signals and recommend. DailyRunner never bypasses the CRA 24-trade/year cap or 14-day min-hold gate — those remain in `quant recommend`.
+**Files**: `src/cli/daily_run_command.py`, `scripts/daily_run.py`, `scripts/daily_run.bat`, `scripts/setup_scheduler.ps1`, `tests/test_daily_run.py` (9 tests), `src/cli/main.py`, `config/portfolio.yaml`.
+
 ### 2026-05-27 — Phase 3 P3.5: ntfy.sh phone alert pipeline
 **Context**: `quant recommend` was purely a terminal tool. No notification fires when signals trigger while the operator is away from the computer.
 **Decision**: ntfy.sh one-way push alerts (confirmed from 2026-05-20 decision). Three triggers wired into `recommend_command --notify`:

@@ -36,6 +36,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Phase 3 P3.5 — ntfy.sh Alerts | ✅ Complete (2026-05-27) | --notify flag on recommend, 3 triggers, alerts_log table, quant alert-test, 16 tests |
+| Phase 3 P3.6 — Scheduled Daily Run | ✅ Complete (2026-05-28) | DailyRunner class, quant daily-run command, Task Scheduler scripts, 9 tests (184/184) |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -314,7 +315,7 @@ tests/test_sell_logic.py        16 tests — signal-SELL gate, drift-SELL gate, 
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 159/159 passing as of 2026-05-26.
+**Status**: 184/184 passing as of 2026-05-28.
 
 **Known test gaps** (TODO for Phase 3 P1+):
 - Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.
@@ -439,4 +440,4 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 
 ---
 
-*Last updated: 2026-05-27. Phase 3 P3.5 — ntfy.sh alert pipeline complete. 3 triggers (NEW_RECOMMENDATION, REGIME_CHANGE, DRAWDOWN_WARNING), alerts_log table, quant alert-test command. 16 new tests. 175/175 passing (174 + 1 DB-skipped).*
+*Last updated: 2026-05-28. Phase 3 P3.6 — Scheduled daily run complete. DailyRunner class, Task Scheduler scripts, quant daily-run command. 184/184 passing.*

@@ -34,6 +34,7 @@ from .phase3_commands import (
     pending_command,
     skip_command,
 )
+from .daily_run_command import daily_run_command
 from ..alerts.ntfy import send_alert
 
 app = typer.Typer(add_completion=False, help="Quant Engine CLI")
@@ -229,6 +230,7 @@ app.command(name="execute")(execute_command)
 app.command(name="pending")(pending_command)
 app.command(name="skip")(skip_command)
 app.command(name="signal-history")(signal_history_command)
+app.command(name="daily-run")(daily_run_command)
 
 
 if __name__ == "__main__":

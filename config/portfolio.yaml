@@ -79,3 +79,8 @@ alerts:
     - NEW_RECOMMENDATION
     - REGIME_CHANGE
     - DRAWDOWN_WARNING
+
+# Scheduled daily run (Phase 3 P3.6)
+daily_run:
+  default_cash: 350.0        # CAD to deploy in recommend step; set to 0 when no new capital
+  step_timeout_seconds: 300  # per-step subprocess timeout; TimeoutExpired treated as FAIL
