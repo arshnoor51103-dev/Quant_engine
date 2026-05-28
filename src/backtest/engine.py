@@ -50,6 +50,30 @@ class BacktestResult:
     rebalance_log: list[dict]             # what was held each period
     metrics: dict                         # sharpe, sortino, max_dd, alpha, etc.
 
+    def summary_str(self) -> str:
+        """Return a plain-text summary of key backtest metrics."""
+        m = self.metrics
+
+        def _f(key: str, fmt: str) -> str:
+            v = m.get(key)
+            return format(v, fmt) if isinstance(v, float) else "—"
+
+        lines = [
+            f"Signal:         {self.signal_name}",
+            f"Period:         {self.config.start_date} → {self.config.end_date}",
+            f"Ann. Return:    {_f('annualized_return', '+.4f')}",
+            f"Ann. Vol:       {_f('annualized_vol', '.4f')}",
+            f"Sharpe:         {_f('sharpe', '.4f')}",
+            f"Sortino:        {_f('sortino', '.4f')}",
+            f"Max Drawdown:   {_f('max_drawdown', '+.4f')}",
+            f"Calmar:         {_f('calmar', '.4f')}",
+            f"Alpha:          {_f('alpha_vs_benchmark', '+.4f')}",
+            f"Beta:           {_f('beta_vs_benchmark', '.4f')}",
+            f"Rebalances:     {m.get('n_rebalances', 0)}",
+            f"Avg holdings:   {m.get('avg_holdings_per_period', 0.0):.1f}",
+        ]
+        return "\n".join(lines)
+
 def run_backtest(
     signal: Signal,
     prices: dict[str, pd.Series],

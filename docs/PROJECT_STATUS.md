@@ -22,7 +22,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 
 ---
 
-## Current State: Phase 3 SELL/Rebalance Complete
+## Current State: Phase 3 P3.7 Test Coverage Complete
 
 | Phase | Status | What It Delivers |
 |-------|--------|-----------------|
@@ -37,6 +37,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Phase 3 P3.5 — ntfy.sh Alerts | ✅ Complete (2026-05-27) | --notify flag on recommend, 3 triggers, alerts_log table, quant alert-test, 16 tests |
 | Phase 3 P3.6 — Scheduled Daily Run | ✅ Complete (2026-05-28) | DailyRunner class, quant daily-run command, Task Scheduler scripts, 9 tests (184/184) |
+| Phase 3 P3.7 — Test Coverage | ✅ Complete (2026-05-28) | BacktestResult.summary_str(), test_backtest.py (8 tests), test_integration.py (11 tests), 2 alert first-run gap tests. 204/204 passing. |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -305,22 +306,26 @@ Avoid 1.5% Wealthsimple FX drag. Universe expands automatically at capital tier 
 ## Test Suite
 
 ```
-tests/test_metrics.py           11 tests — all portfolio/metrics.py functions
-tests/test_signals.py           11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
-tests/test_recommendations.py  22 tests — combined signals, target weights, all gate types, cold-start math
-tests/test_mean_reversion.py    16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
-tests/test_optimizer.py         31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
-tests/test_storage.py           17 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold
-tests/test_sell_logic.py        16 tests — signal-SELL gate, drift-SELL gate, sell_reason field, partial vs full exit
+tests/test_metrics.py            11 tests — all portfolio/metrics.py functions
+tests/test_signals.py            11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
+tests/test_recommendations.py   22 tests — combined signals, target weights, all gate types, cold-start math
+tests/test_mean_reversion.py     16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
+tests/test_optimizer.py          31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
+tests/test_storage.py            17 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold
+tests/test_sell_logic.py         16 tests — signal-SELL gate, drift-SELL gate, sell_reason field, partial vs full exit
+tests/test_signal_persistence.py  9 tests — ticker_metadata, persist_signals, query_signal_history
+tests/test_alerts.py             14 tests — ntfy transport, 3 alert triggers, drawdown state machine, first-run paths
+tests/test_daily_run.py           9 tests — DailyRunner steps, timeout-as-failure, cash flag, log branching
+tests/test_rsi_signal.py         23 tests — RSI math, Wilder SMMA, gate logic, metadata, edge cases
+tests/test_H005_rsi_backtest.py   1 test  — H005 backtest regression (graveyard artifact)
+tests/test_backtest.py            8 tests — avg_holdings_per_period > 0, summary_str(), metrics keys, ValueError
+tests/test_integration.py        11 tests — full pipeline: signal layer → backtest layer → recommend layer
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 184/184 passing as of 2026-05-28.
+**Status**: 204/204 passing as of 2026-05-28 (v0.6.0-test-coverage).
 
-**Known test gaps** (TODO for Phase 3 P1+):
-- Backtest engine needs a test asserting `avg_holdings_per_period > 0` on known-positive signals.
-- No tests for `BacktestResult.summary_str()`.
-- No integration test covering full pipeline: fetch → signal → backtest → recommend.
+**Known test gaps**: None outstanding — all Phase 3 subsystems now have targeted coverage.
 
 ---
 
@@ -440,4 +445,4 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 
 ---
 
-*Last updated: 2026-05-28. Phase 3 P3.6 — Scheduled daily run complete. DailyRunner class, Task Scheduler scripts, quant daily-run command. 184/184 passing.*
+*Last updated: 2026-05-28. Phase 3 P3.7 — Test coverage complete. BacktestResult.summary_str() added. test_backtest.py (8 tests), test_integration.py (11 tests), 2 alert first-run gap tests. 204/204 passing. Tagged v0.6.0-test-coverage.*

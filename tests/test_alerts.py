@@ -194,3 +194,40 @@ def test_drawdown_warning_logs_recovery_no_post() -> None:
         logged = json.loads(mock_log.call_args[0][1])
         assert logged["status"] == "RECOVERED"
         assert abs(logged["drawdown"] - 0.10) < 0.01
+
+
+# ─── First-run state machine gaps ─────────────────────────────────────────────
+
+# Test 13
+def test_regime_change_fires_on_first_run_no_prior_alert() -> None:
+    """
+    get_last_alert returns None (no prior REGIME_CHANGE row).
+    last_regime = None, which != any real regime name → alert must fire.
+    """
+    with patch("src.cli.phase3_commands.send_alert") as mock_send, \
+         patch("src.cli.phase3_commands.get_last_alert", return_value=None), \
+         patch("src.cli.phase3_commands.log_alert") as mock_log:
+        _run_alert_triggers([], "HIGH_VOL", _cfg(triggers=["REGIME_CHANGE"]), [], {})
+    mock_send.assert_called_once()
+    logged = json.loads(mock_log.call_args[0][1])
+    assert logged["regime"] == "HIGH_VOL"
+    assert logged["previous"] is None
+
+
+# Test 14
+def test_drawdown_warning_first_run_fires_when_exceeds_threshold() -> None:
+    """
+    get_last_alert returns None (no prior DRAWDOWN row).
+    last_status defaults to 'RECOVERED' → crossing threshold must fire the alert.
+    """
+    with patch("src.cli.phase3_commands.send_alert") as mock_send, \
+         patch("src.cli.phase3_commands.get_last_alert", return_value=None), \
+         patch("src.cli.phase3_commands.log_alert") as mock_log, \
+         patch("src.cli.phase3_commands._portfolio_nav_series",
+               return_value=_nav_series_with_dd(0.17)):
+        _run_alert_triggers([], "NORMAL", _cfg(triggers=["DRAWDOWN_WARNING"]), [], {})
+    mock_send.assert_called_once()
+    assert mock_send.call_args[1].get("priority") == 5
+    logged = json.loads(mock_log.call_args[0][1])
+    assert logged["status"] == "WARNING"
+    assert abs(logged["drawdown"] - 0.17) < 0.01

@@ -19,6 +19,18 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-28 — Phase 3 P3.7: Test coverage pass
+
+**Context**: Three known gaps in the test suite since Phase 2: (1) no test asserting the backtest engine actually holds tickers (avg_holdings_per_period > 0), only that it runs without error; (2) no test for BacktestResult.summary_str(), which didn't exist yet; (3) no integration test joining all three pipeline layers (signal → backtest → recommend). Additionally, two DRAWDOWN/REGIME_CHANGE alert state-machine paths were untested: the first-run case where get_last_alert() returns None.
+
+**Decision**: Added BacktestResult.summary_str() to engine.py (returns formatted multi-line string with all key metrics). Created tests/test_backtest.py (8 tests: avg_holdings_per_period assertion, summary_str() content/dates/signal-name, insufficient-data ValueError, rebalance_log non-empty, metrics keys present). Created tests/test_integration.py (11 tests across three classes: TestSignalLayer verifies momentum scores; TestBacktestLayer verifies holdings and rebalances; TestRecommendLayer verifies BUY cards produced and ValueError on zero capital). Added test_regime_change_fires_on_first_run_no_prior_alert and test_drawdown_warning_first_run_fires_when_exceeds_threshold to test_alerts.py.
+
+**Key design choice — integration test avoids real VolRegimeSignal**: VolRegimeSignal requires 1291 rows of XIC.TO history. Constructing that in a test fixture would be slow and couple the integration test to a specific signal's data requirement. Instead the regime SignalResult is constructed directly — the regime signal is already unit-tested in test_signals.py. The integration test focuses on layer connectivity, not signal correctness.
+
+**Result**: 184 → 204 tests, all passing. Tagged v0.6.0-test-coverage. Known test gaps section in PROJECT_STATUS.md cleared.
+
+**Files**: `src/backtest/engine.py` (summary_str), `tests/test_backtest.py`, `tests/test_integration.py`, `tests/test_alerts.py`, `docs/PROJECT_STATUS.md`.
+
 ### 2026-05-28 — Phase 3 P3.6: Scheduled daily run
 **Context**: Engine signals and recommendations were only generated when the operator manually ran `quant recommend`. No automation existed — daily data fetch and signal generation required manual CLI invocation.
 **Decision**: DailyRunner class in `src/cli/daily_run_command.py` orchestrates four CLI steps (fetch → momentum signal → vol_regime signal → recommend --optimize --save --notify) via subprocess. Runs all steps regardless of individual failures (fail-fast would skip the recommend step if a signal step errored). Error alerts via ntfy.sh at priority=5 on any step failure. Two callers: `scripts/daily_run.py` (Task Scheduler entry point, writes dated log) and `quant daily-run` (interactive manual trigger, stdout only). Windows Task Scheduler registered via `scripts/setup_scheduler.ps1` with dual triggers: daily at configurable time (morning or post-close, commented variable at top) and at-logon fallback. `-WakeToRun ON`, `-StartWhenAvailable ON` so laptop (plugged in, lid open at home) wakes for the scheduled run. `logs/bat.log` overwritten each run (startup failures only); `logs/YYYY-MM-DD.log` appended (DailyRunner owns signal output and trade cards).
