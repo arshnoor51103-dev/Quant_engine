@@ -1,6 +1,6 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-22 (universe swap ZAG→CHPS, research pipeline integrated).
+> Last updated: 2026-05-28 (v0.7.0-hypothesis-cleanup — H004 + H005 both KILLED, DL-014 written).
 
 ---
 
@@ -22,7 +22,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 
 ---
 
-## Current State: Phase 3 P3.7 Test Coverage Complete
+## Current State: v0.7.0 Hypothesis Cleanup Complete
 
 | Phase | Status | What It Delivers |
 |-------|--------|-----------------|
@@ -38,6 +38,7 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Phase 3 P3.5 — ntfy.sh Alerts | ✅ Complete (2026-05-27) | --notify flag on recommend, 3 triggers, alerts_log table, quant alert-test, 16 tests |
 | Phase 3 P3.6 — Scheduled Daily Run | ✅ Complete (2026-05-28) | DailyRunner class, quant daily-run command, Task Scheduler scripts, 9 tests (184/184) |
 | Phase 3 P3.7 — Test Coverage | ✅ Complete (2026-05-28) | BacktestResult.summary_str(), test_backtest.py (8 tests), test_integration.py (11 tests), 2 alert first-run gap tests. 204/204 passing. |
+| v0.7.0 — Hypothesis Cleanup | ✅ Complete (2026-05-28) | H004 KILLED (Moreira-Muir, leverage effect absent 7/7, corr 0.9862). H005 KILLED deliverables complete (LEARNING.md table, DL-014 supersedes DL-012). Both graveyard entries written. Research script: docs/research/scratch/H004_vol_targeting_backtest.py. |
 | Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
 
 ---
@@ -441,8 +442,8 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 3. Check `LEARNING.md` for any decisions or bugs logged since this doc was last updated.
 4. Run `python -m pytest tests/ -v` to confirm baseline is green before any change.
 5. Run `quant signals --signal-type momentum` to confirm live signals are working.
-6. The next task is Phase 3 P2 (within-bucket optimizer, Ledoit-Wolf). Research pipeline is live — use `/quant-research` to investigate any algorithm before building it.
+6. Hypothesis queue: H006 (volume spike, SHELVED Tier 2+), H003 (residual reversal, SHELVED Tier 2+). No CANDIDATE hypotheses currently active — next signal work requires a new hypothesis file through `/quant-research`. Research pipeline is live.
 
 ---
 
-*Last updated: 2026-05-28. Phase 3 P3.7 — Test coverage complete. BacktestResult.summary_str() added. test_backtest.py (8 tests), test_integration.py (11 tests), 2 alert first-run gap tests. 204/204 passing. Tagged v0.6.0-test-coverage.*
+*Last updated: 2026-05-28. v0.7.0-hypothesis-cleanup — H004 (Moreira-Muir vol targeting) KILLED: leverage effect absent 7/7 ETFs, monthly return corr 0.9862 with baseline. H005 (RSI(21) filter) KILLED: DL-014 supersedes DL-012 with backtest evidence (t=NaN/−1.00, 96.2% agreement, +7.30% divergence). Both graveyard entries written. No src/ changes. 204/204 tests still passing.*
