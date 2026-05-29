@@ -19,6 +19,25 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-28 — Tier 1 Complete: system declared production-ready, v1.0.0-tier1 tagged
+
+**Context**: All seven originally planned Tier 1 subsystems shipped. The engine has been running for ~9 days (first commit 2026-05-19). Every subsystem has targeted test coverage and has been validated against real data.
+
+**What production-ready means for this system:**
+- **Daily auto-run**: `DailyRunner` + Windows Task Scheduler (P3.6) runs `fetch → momentum signal → vol_regime signal → recommend --optimize --save --notify` every morning without operator intervention. Step failures are reported via ntfy.sh.
+- **Persistence**: All state in SQLite — prices, holdings, trades, recommendations, signal_scores, alerts_log, run_log, metrics_snapshots. Nothing lives only in memory. Daily runs persist every signal score and trade card.
+- **Phone alerts**: Three triggers wired: NEW_RECOMMENDATION, REGIME_CHANGE, DRAWDOWN (>15% threshold). DRAWDOWN state machine fires once on crossing, logs a RECOVERED row on exit — prevents alert spam on repeated crossings.
+- **BUY/SELL/rebalance**: Full recommendation lifecycle. Signal-driven full exit (negative signal). Drift-triggered partial trim (bucket tolerance exceeded). `sell_reason` field distinguishes the two. All routed through the same `quant recommend` + `quant execute` pipeline.
+- **Within-bucket optimizer**: Ledoit-Wolf covariance + SLSQP. `quant recommend --optimize` produces Markowitz-weighted trade cards. Equal-weight fallback preserved on solver failure.
+- **Hypothesis pipeline**: Council-validated research pipeline at `docs/research/`. Four hypotheses entered, all resolved: H001 (KILLED, parameter failure — 9-ETF universe too small for MR), H004 (KILLED, structural failure — leverage effect absent 7/7 ETFs), H005 (KILLED, structural failure — RSI/momentum mathematical redundancy), H006 (SHELVED, ETF structural incompatibility). 14 DEEPER_LEARNING entries written (DL-001 through DL-014).
+- **Test suite**: 204 tests across 14 files, all passing. Every subsystem has targeted coverage.
+
+**Tags**: v0.3.0-signal-persistence → v0.4.0-alerts → v0.5.0-daily-run → v0.6.0-test-coverage → v0.7.0-hypothesis-cleanup → **v1.0.0-tier1**
+
+**Tier 2 trigger**: NAV reaches $10,000 CAD.
+
+---
+
 ### 2026-05-28 — H004 (vol targeting) and H005 (RSI filter) hypothesis cleanup: both KILLED
 
 **Context**: Two hypotheses at CANDIDATE status with mandatory backtests pending. H004 (Moreira-Muir portfolio-level vol scaling, DL-007) had no hypothesis file yet. H005 (RSI(21) > 50 momentum gate, DL-012) was already KILLED with backtest results recorded but two deliverables missing: LEARNING.md result table and DL-012 supersession.
@@ -419,21 +438,39 @@ Metrics module confirmed running. Ready for first manual buy via `trade` command
 > Top of mind. Reordered as priorities shift. Items move to "Done" when complete.
 
 ### Active
-- [ ] Phase 1 Milestone 1: Data pipeline pulling 20yr daily OHLCV for 9 ETFs into SQLite
-- [ ] Phase 1 Milestone 2: Portfolio model + holdings ledger
-- [ ] Phase 1 Milestone 3: Core risk metrics module with unit tests
-- [ ] Phase 1 Milestone 4: CLI dashboard (`quant status`, `quant metrics`, `quant fetch`)
-- [ ] Phase 1 Milestone 5: First end-to-end run — fetch data, compute metrics, print dashboard
+*(Tier 1 complete — no active items. Awaiting Tier 2 trigger: NAV ≥ $10,000 CAD.)*
 
-### Backlog (Phase 2)
-- [ ] Momentum factor signal
-- [ ] Mean reversion signal
-- [ ] Volatility regime detection
-- [ ] Backtesting framework
-- [ ] Phone alert pipeline (Telegram bot)
+### Backlog (Tier 2)
+- [ ] Capital tier transition logic: detect NAV ≥ $10k, auto-update `capital_tier` in `config/portfolio.yaml`, notify via ntfy.sh
+- [ ] Canadian dividend large-cap stock additions: screen TSX-listed, 5+ yr dividend growth, AUM > $100M (Tier 2 universe expansion)
+- [ ] Covariance estimation review: Ledoit-Wolf re-tuning with 20–40 assets; evaluate non-linear shrinkage if N/T ratio degrades
+- [ ] H001 mean-reversion re-evaluation at Tier 2 (individual equities — 20+ names provide cross-sectional dispersion the 9-ETF universe lacks)
+- [ ] Tier 2 code review: full pass on all `src/` before first Tier 2 feature ships
 
 ### Done
-*(items move here on completion)*
+- [x] Phase 1 Milestone 1: Data pipeline — 20yr daily OHLCV for 9 ETFs into SQLite (2026-05-19)
+- [x] Phase 1 Milestone 2: Portfolio model + holdings ledger (2026-05-19)
+- [x] Phase 1 Milestone 3: Core risk metrics module with unit tests (2026-05-19)
+- [x] Phase 1 Milestone 4: CLI dashboard — `quant status`, `quant metrics`, `quant fetch` (2026-05-19)
+- [x] Phase 1 Milestone 5: First end-to-end run (2026-05-19)
+- [x] Phase 2: Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard (2026-05-19)
+- [x] Phase 3 P0: Trade recommendation engine, cost/CRA/min-hold gates, `quant execute` (2026-05-20)
+- [x] Dashboard + CLI redesign: Streamlit 4-file architecture (2026-05-20)
+- [x] Phase 3 P1: Mean reversion signal — standalone not viable, signal in codebase (2026-05-22)
+- [x] Universe swap: ZAG.TO → CHPS.TO in growth bucket (2026-05-22)
+- [x] Research pipeline: quant-research skill + Council Config G + DEEPER_LEARNING.md (2026-05-22)
+- [x] Structured research pipeline: `docs/research/` hypothesis lifecycle tracker (2026-05-23)
+- [x] Phase 3 P2: Within-bucket Markowitz optimizer, Ledoit-Wolf, `--optimize` flag (2026-05-23)
+- [x] quant-research skill upgrade: 4-agent parallel pipeline (2026-05-24)
+- [x] Phase 3 P3.3: Signal persistence — `signal_scores` table, `quant signal-history` (2026-05-26)
+- [x] Phase 3 SELL/Rebalance: signal-driven exit + drift-triggered trim, `sell_reason` field (2026-05-26)
+- [x] H005: RSI(21) filter KILLED — mathematical redundancy with momentum confirmed (2026-05-26)
+- [x] H006: Volume spike indicator SHELVED — ETF structural failure modes (2026-05-26)
+- [x] Phase 3 P3.5: ntfy.sh phone alerts — 3 triggers, `alerts_log`, `--notify` flag (2026-05-27)
+- [x] Phase 3 P3.6: Scheduled daily run — DailyRunner, Task Scheduler, `quant daily-run` (2026-05-28)
+- [x] Phase 3 P3.7: Test coverage closure — `summary_str()`, integration tests, 204/204 (2026-05-28)
+- [x] H004: Volatility targeting KILLED — leverage effect absent 7/7 ETFs, corr 0.9862 (2026-05-28)
+- [x] v1.0.0-tier1 tagged — Tier 1 production-ready (2026-05-28)
 
 ---
 

@@ -169,11 +169,18 @@ Key rules:
 **Phase 3 P1 — Mean Reversion Signal. Complete (2026-05-22). Backtest: standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24.2%, alpha −6.6%). Signal in codebase, not in recommendation engine.**
 **Phase 3 P2 — Within-Bucket Optimizer (Ledoit-Wolf). Complete (2026-05-23). `quant recommend --optimize` flag. 31 new tests. 109/109 passing.**
 **quant-research skill upgrade (2026-05-24). 4-agent parallel pipeline (Academic + Practitioner + Replication/Criticism + inline Synthesis). Expanded DEEPER_LEARNING entry template with Evidence Quality, Source Coverage, Replication Evidence, Practitioner Consensus sections.**
+**Phase 3 P3.3 — Signal Persistence. Complete (2026-05-26). `signal_scores` table. `persist_signals()` + `query_signal_history()` in `storage.py`. `quant signals --save`, `quant recommend --save` write signal evidence before trade cards. `quant signal-history` command. 9 new tests. v0.3.0-signal-persistence.**
+**Phase 3 SELL / Rebalance Logic. Complete (2026-05-26). Signal-driven full exit + drift-triggered partial trim. `sell_reason` field on `TradeCard` and `recommendations` table. `migrate_recommendations_v3()` schema migration. 16 new tests.**
 **H005 — RSI(21) > 50 momentum filter (2026-05-26). KILLED. Backtest confirmed mathematical near-redundancy: 96.2% agreement with momentum (9-ETF), t=NaN incremental alpha. Divergence analysis: gate suppressed +7.30% forward-return signals. All 3 kill criteria triggered. DL-012. Autopsy: `docs/research/graveyard/H005_rsi_momentum_filter.md`.**
 **H006 — Volume spike as regime indicator (2026-05-26). SHELVED. Council: STRONG_CONSENSUS. Three ETF failure modes: creation/redemption noise contamination, absent visibility mechanism, Baker & Stein direction inversion at portfolio-aggregate level. 93% factor zoo failure rate for liquidity signals. Re-evaluate at Tier 2+ with individual equities. DL-013.**
+**Phase 3 P3.5 — ntfy.sh Phone Alerts. Complete (2026-05-27). Three triggers: NEW_RECOMMENDATION, REGIME_CHANGE, DRAWDOWN (>15% threshold, state machine prevents spam). `alerts_log` table. `--notify` flag on `quant recommend`. `quant alert-test` command. 14 tests. v0.4.0-alerts.**
+**Phase 3 P3.6 — Scheduled Daily Run. Complete (2026-05-28). `DailyRunner` class in `src/cli/daily_run_command.py`. `quant daily-run` command. Windows Task Scheduler scripts: `scripts/daily_run.py`, `scripts/daily_run.bat`, `scripts/setup_scheduler.ps1`. 9 tests. v0.5.0-daily-run.**
+**Phase 3 P3.7 — Test Coverage Closure. Complete (2026-05-28). `BacktestResult.summary_str()` added to `engine.py`. `tests/test_backtest.py` (8 tests). `tests/test_integration.py` (10 tests). Alert first-run gap tests added to `test_alerts.py`. 204/204 passing. v0.6.0-test-coverage.**
 **H004 — Volatility targeting / Moreira-Muir scaling (2026-05-28). KILLED. 2 of 6 kill criteria triggered: (1) leverage effect absent — all 7 equity ETFs show positive Corr(fwd_ret, RV) on 2021-2026 data, invalidating Moreira-Muir's mathematical precondition; (2) monthly return correlation with equal-weight baseline = 0.9862, near-zero portfolio differentiation. Graveyard: `docs/research/graveyard/H004_vol_targeting.md`. Research script: `docs/research/scratch/H004_vol_targeting_backtest.py`.**
 
 **Current hypothesis count:** H001 (graveyard — mean reversion standalone, KILLED 2026-05-22) · H004 (graveyard — vol targeting / Moreira-Muir, KILLED 2026-05-28) · H005 (graveyard — RSI(21) momentum filter, KILLED 2026-05-26) · H006 (SHELVED — volume spike regime indicator, re-evaluate Tier 2+)
+
+**Tier 1 Complete. v1.0.0-tier1 tagged (2026-05-28). All Phase 3 subsystems shipped and tested. System is production-ready: daily auto-run, full BUY/SELL/rebalance pipeline, within-bucket optimizer, full persistence, phone alerts, Council-validated hypothesis pipeline, 204/204 tests. Next milestone trigger: NAV ≥ $10,000 CAD (Tier 2).**
 
 ### Phase 3 P0 decisions locked in CLAUDE.md:
 - **Spread proxy**: Flat 0.05% universal for all ETFs. `spread_override` field in `universe.yaml` for per-ETF override (Tier 3+). Revisit when portfolio size makes 6bp differentials worth modeling.
@@ -189,4 +196,4 @@ For a full picture of what's built, what's tested, all architectural decisions, 
 
 ---
 
-*Last updated: 2026-05-28. H004 (vol targeting, Moreira-Muir) KILLED — leverage effect absent 7/7 ETFs, monthly return corr with baseline 0.9862. H005 (RSI(21) filter) KILLED — DL-014 supersedes DL-012 with backtest evidence. Both graveyard entries written. H006 (SHELVED). v0.7.0-hypothesis-cleanup tagged.*
+*Last updated: 2026-05-28. v1.0.0-tier1 — Tier 1 complete. All Phase 3 subsystems (P3.3 signal persistence, SELL/rebalance, P3.5 alerts, P3.6 daily run, P3.7 test coverage) shipped. H004 (vol targeting) + H005 (RSI filter) KILLED. H006 SHELVED. 204/204 tests passing.*

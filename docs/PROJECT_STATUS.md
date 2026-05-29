@@ -1,12 +1,12 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-28 (v0.7.0-hypothesis-cleanup — H004 + H005 both KILLED, DL-014 written).
+> Last updated: 2026-05-28 (v1.0.0-tier1 — Tier 1 complete, all Phase 3 subsystems shipped, 204/204 tests passing).
 
 ---
 
 ## What This System Is
 
-A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven, news-free, persistent. It generates momentum, volatility regime, and mean reversion signals daily, validates them against walk-forward backtests, and surfaces trade recommendations. Arsh pulls the trigger manually in Wealthsimple — the system never executes.
+A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven, news-free, persistent. It generates momentum and volatility regime signals daily, validates them against walk-forward backtests, and surfaces BUY/SELL/rebalance trade recommendations. Arsh pulls the trigger manually in Wealthsimple — the system never executes.
 
 **Capital**: ~$500–1000 CAD starting, $300–400/month contributions. 3–7 year horizon. 20% soft drawdown ceiling. Benchmark: VBAL (interim), VFV (stretch).
 
@@ -22,24 +22,24 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 
 ---
 
-## Current State: v0.7.0 Hypothesis Cleanup Complete
+## Current State: v1.0.0 — Tier 1 Complete
 
-| Phase | Status | What It Delivers |
-|-------|--------|-----------------|
-| Phase 1 — Foundation | ✅ Complete | Data pipeline, portfolio model, risk metrics, CLI |
-| Phase 2 — Signal Engine | ✅ Complete | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
-| Phase 3 P0 — Recommendations | ✅ Complete | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
-| Phase 3 P1 — Mean Reversion | ✅ Complete | Regime-conditional mean reversion signal + backtest validation (not viable standalone) |
-| Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | Ledoit-Wolf covariance, Markowitz within-bucket optimizer |
-| Phase 3 P3.3 — Signal Persistence | ✅ Complete (2026-05-26) | signal_scores table, persist_signals(), query_signal_history(), quant signal-history command |
-| Phase 3 SELL/Rebalance | ✅ Complete (2026-05-26) | Signal-driven full exit + drift-triggered partial trim, sell_reason field, schema migration, 16 new tests |
-| Research Pipeline | ✅ Integrated | quant-research skill + Council Config G + docs/DEEPER_LEARNING.md |
-| Research Pipeline (Structured) | ✅ Structured (2026-05-23) | docs/research/ — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
-| Phase 3 P3.5 — ntfy.sh Alerts | ✅ Complete (2026-05-27) | --notify flag on recommend, 3 triggers, alerts_log table, quant alert-test, 16 tests |
-| Phase 3 P3.6 — Scheduled Daily Run | ✅ Complete (2026-05-28) | DailyRunner class, quant daily-run command, Task Scheduler scripts, 9 tests (184/184) |
-| Phase 3 P3.7 — Test Coverage | ✅ Complete (2026-05-28) | BacktestResult.summary_str(), test_backtest.py (8 tests), test_integration.py (11 tests), 2 alert first-run gap tests. 204/204 passing. |
-| v0.7.0 — Hypothesis Cleanup | ✅ Complete (2026-05-28) | H004 KILLED (Moreira-Muir, leverage effect absent 7/7, corr 0.9862). H005 KILLED deliverables complete (LEARNING.md table, DL-014 supersedes DL-012). Both graveyard entries written. Research script: docs/research/scratch/H004_vol_targeting_backtest.py. |
-| Phase 4 — Automation | 🔲 Not started | ntfy.sh phone alerts, scheduled daily runs |
+| Phase | Status | Tag | What It Delivers |
+|-------|--------|-----|-----------------|
+| Phase 1 — Foundation | ✅ Complete | — | Data pipeline, portfolio model, risk metrics, CLI |
+| Phase 2 — Signal Engine | ✅ Complete | — | Momentum + vol regime signals, walk-forward backtester, FastAPI dashboard |
+| Phase 3 P0 — Recommendations | ✅ Complete | — | Signal-proportional weights, trade cards, cost/CRA/min-hold gates, execute workflow |
+| Phase 3 P1 — Mean Reversion | ✅ Complete | — | Regime-conditional MR signal + backtest validation (not viable standalone on 9-ETF universe) |
+| Phase 3 P2 — Optimizer | ✅ Complete (2026-05-23) | — | Ledoit-Wolf covariance, Markowitz within-bucket optimizer, `--optimize` flag |
+| Phase 3 P3.3 — Signal Persistence | ✅ Complete (2026-05-26) | v0.3.0-signal-persistence | `signal_scores` table, `persist_signals()`, `query_signal_history()`, `quant signal-history` |
+| Phase 3 SELL / Rebalance | ✅ Complete (2026-05-26) | — | Signal-driven full exit + drift-triggered partial trim, `sell_reason` field, schema migration |
+| Phase 3 P3.5 — Phone Alerts | ✅ Complete (2026-05-27) | v0.4.0-alerts | ntfy.sh, 3 triggers, DRAWDOWN state machine, `alerts_log` table, `quant alert-test` |
+| Phase 3 P3.6 — Scheduled Daily Run | ✅ Complete (2026-05-28) | v0.5.0-daily-run | DailyRunner class, `quant daily-run`, Task Scheduler scripts |
+| Phase 3 P3.7 — Test Coverage | ✅ Complete (2026-05-28) | v0.6.0-test-coverage | `BacktestResult.summary_str()`, test_backtest.py, test_integration.py, 204/204 |
+| Research Pipeline | ✅ Integrated | — | quant-research skill + Council Config G + `docs/DEEPER_LEARNING.md` |
+| Research Pipeline (Structured) | ✅ Structured (2026-05-23) | — | `docs/research/` — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
+| Hypothesis Queue | ✅ Cleared | v0.7.0-hypothesis-cleanup | H004 KILLED (Moreira-Muir), H005 KILLED (RSI redundancy), H006 SHELVED (ETF incompatibility) |
+| **Tier 1** | **✅ Production-ready** | **v1.0.0-tier1** | **All subsystems shipped. Daily auto-run live. 204/204 tests.** |
 
 ---
 
@@ -47,46 +47,77 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 
 ```
 quant_engine/
-├── CLAUDE.md                   ← hard constraints + coding conventions (READ FIRST)
-├── LEARNING.md                 ← append-only log: decisions, bugs, concepts
+├── CLAUDE.md                        ← hard constraints + coding conventions (READ FIRST)
+├── LEARNING.md                      ← append-only log: decisions, bugs, concepts
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
 ├── docs/
-│   ├── PROJECT_STATUS.md       ← this file
+│   ├── PROJECT_STATUS.md            ← this file
 │   ├── PHASE_1_ROADMAP.md
 │   ├── ARCHITECTURE.md
-│   └── DEEPER_LEARNING.md      ← Council-validated quant knowledge base (append-only, DL-001+)
+│   ├── DEEPER_LEARNING.md           ← Council-validated quant knowledge base (append-only, DL-001–DL-014)
+│   └── research/
+│       ├── PIPELINE.md              ← master hypothesis lifecycle rules
+│       ├── TEMPLATE_HYPOTHESIS.md
+│       ├── hypotheses/              ← active/killed hypothesis files (H001–H006)
+│       ├── graveyard/               ← H001, H004, H005 autopsy files (permanent, append-only)
+│       ├── watchlist/               ← passive background research (H006, ai_semiconductor, canadian_energy)
+│       ├── findings/                ← promoted signals (empty — none promoted yet)
+│       └── scratch/                 ← research scripts (H004_vol_targeting_backtest.py)
 ├── config/
-│   ├── portfolio.yaml          ← buckets, tiers, risk config, trade thresholds + spread_proxy/anchor_return
-│   └── universe.yaml           ← 9 ETF definitions with metadata + spread_override hook
+│   ├── portfolio.yaml               ← buckets, tiers, risk config, trade thresholds, optimizer block, rebalance block
+│   └── universe.yaml                ← 9 ETF definitions with metadata + spread_override hook
 ├── src/
 │   ├── data/
-│   │   ├── ingest.py           ← yfinance → SQLite, incremental OHLCV pull
-│   │   └── storage.py          ← SQLite schema + helpers; Phase 3 adds recommendation CRUD
+│   │   ├── ingest.py                ← yfinance → SQLite, incremental OHLCV pull
+│   │   └── storage.py               ← SQLite schema + helpers; recommendations CRUD, signal persistence, alerts log
 │   ├── portfolio/
-│   │   ├── model.py            ← holdings, NAV, bucket allocation, price_series
-│   │   ├── metrics.py          ← Sharpe, Sortino, Calmar, max DD, beta, alpha, rolling
-│   │   └── recommendations.py  ← Phase 3 P0: combined signals, target weights, trade cards
+│   │   ├── model.py                 ← holdings, NAV, bucket allocation, price_series
+│   │   ├── metrics.py               ← Sharpe, Sortino, Calmar, max DD, beta, alpha, rolling
+│   │   ├── recommendations.py       ← combined signals, target weights, BUY/SELL/drift trade cards
+│   │   └── optimizer.py             ← BucketOptimizer: Ledoit-Wolf covariance + SLSQP within-bucket weights
 │   ├── signals/
-│   │   ├── base.py             ← Signal ABC + SignalResult dataclass
-│   │   ├── momentum.py         ← 12-1 month momentum (Jegadeesh-Titman 1993)
-│   │   ├── vol_regime.py       ← realized vol percentile → regime classification
-│   │   └── mean_reversion.py   ← regime-conditional z-score MR (Jegadeesh/Lehmann 1990)
+│   │   ├── base.py                  ← Signal ABC + SignalResult dataclass
+│   │   ├── momentum.py              ← 12-1 month momentum (Jegadeesh-Titman 1993)
+│   │   ├── vol_regime.py            ← realized vol percentile → regime classification
+│   │   ├── mean_reversion.py        ← regime-conditional z-score MR (not wired into recommendation engine)
+│   │   └── rsi.py                   ← RSI(21) signal (H005 graveyard artifact; not in signal path)
 │   ├── backtest/
-│   │   └── engine.py           ← walk-forward backtester, BacktestConfig, BacktestResult
+│   │   └── engine.py                ← walk-forward backtester, BacktestConfig, BacktestResult, summary_str()
 │   ├── api/
-│   │   └── server.py           ← FastAPI server, 5 REST endpoints + HTML dashboard
+│   │   └── server.py                ← FastAPI server, 5 REST endpoints + HTML dashboard
+│   ├── alerts/
+│   │   └── ntfy.py                  ← ntfy.sh HTTP transport, fire-and-forget, never raises
+│   ├── dashboard/
+│   │   ├── styles.py                ← Streamlit CSS + layout constants
+│   │   ├── data.py                  ← data-loading helpers for dashboard
+│   │   └── components.py            ← reusable Streamlit component functions
 │   └── cli/
-│       ├── main.py             ← typer app, all commands registered
-│       ├── phase2_commands.py  ← signals, backtest, dashboard commands
-│       └── phase3_commands.py  ← recommend, execute, pending, skip commands
+│       ├── main.py                  ← typer app, all commands registered
+│       ├── phase2_commands.py       ← signals, backtest, dashboard commands
+│       ├── phase3_commands.py       ← recommend, execute, pending, skip, alert-test commands
+│       └── daily_run_command.py     ← DailyRunner class + quant daily-run command
+├── scripts/
+│   ├── daily_run.py                 ← Task Scheduler entry point; writes dated log to logs/
+│   ├── daily_run.bat                ← .bat wrapper for Task Scheduler (activates venv, runs daily_run.py)
+│   └── setup_scheduler.ps1          ← registers daily_run.bat as a Windows Task Scheduler task
 ├── tests/
-│   ├── test_metrics.py         ← 11 unit tests for portfolio/metrics.py
-│   ├── test_signals.py         ← 11 unit tests for momentum + vol_regime signals
-│   ├── test_recommendations.py ← 22 unit tests for Phase 3 P0 recommendation engine
-│   └── test_mean_reversion.py  ← 16 unit tests for MeanReversionSignal
-└── data/                       ← SQLite db + parquet cache (gitignored)
+│   ├── test_metrics.py              ← 11 tests — portfolio/metrics.py
+│   ├── test_signals.py              ← 11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
+│   ├── test_recommendations.py      ← 21 tests — combined signals, target weights, all gate types, cold-start math
+│   ├── test_mean_reversion.py       ← 16 tests — MeanReversionSignal shape, bounds, sign convention, warmup
+│   ├── test_optimizer.py            ← 31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks
+│   ├── test_storage.py              ← 23 tests — SQLite schema, CRUD, VWAP, trade count, min-hold, alerts log
+│   ├── test_sell_logic.py           ← 16 tests — signal-SELL gate, drift-SELL gate, sell_reason, partial vs full exit
+│   ├── test_signal_persistence.py   ←  9 tests — ticker_metadata(), persist_signals(), query_signal_history()
+│   ├── test_alerts.py               ← 14 tests — ntfy transport, 3 alert triggers, DRAWDOWN state machine, first-run
+│   ├── test_daily_run.py            ←  9 tests — DailyRunner steps, timeout-as-failure, cash flag, log branching
+│   ├── test_rsi_signal.py           ← 24 tests — RSI math, Wilder SMMA, gate logic, metadata, edge cases
+│   ├── test_H005_rsi_backtest.py    ←  1 test  — H005 backtest regression (graveyard artifact)
+│   ├── test_backtest.py             ←  8 tests — avg_holdings > 0, summary_str(), metrics keys, ValueError
+│   └── test_integration.py          ← 10 tests — full pipeline: signal layer → backtest layer → recommend layer
+└── data/                            ← SQLite db + parquet cache (gitignored)
 ```
 
 ---
@@ -95,6 +126,11 @@ quant_engine/
 
 Run from project root with: `python -m src.cli.main <command>`
 Or if installed as `quant`: `quant <command>`
+
+**Windows note**: Set `$env:PYTHONUTF8 = "1"` before running CLI commands or Unicode bar characters crash the console:
+```powershell
+$env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
+```
 
 ### Phase 1 Commands
 | Command | What it does |
@@ -109,23 +145,20 @@ Or if installed as `quant`: `quant <command>`
 ### Phase 2 Commands
 | Command | What it does |
 |---------|-------------|
-| `quant signals --signal-type [momentum\|momentum_short\|vol_regime\|mean_reversion] [--save]` | Generate signal scores. `--save` persists to DB with a run_id. |
-| `quant signal-history TICKER [--records N] [--signal-type TYPE]` | Show persisted signal score history. Pivoted table: date, signal scores, regime, raw return. Default last 12 records. |
-| `quant backtest --signal-type X --years N --top-n N` | Walk-forward backtest. Default: momentum, 5yr, top-4. Prints metrics vs VFV benchmark. |
+| `quant signals --signal-type [momentum\|momentum_short\|vol_regime\|mean_reversion] [--save]` | Generate signal scores. `--save` persists to `signal_scores` table with a `run_id`. |
+| `quant signal-history TICKER [--records N] [--signal-type TYPE]` | Show persisted signal score history. Pivoted table: date, scores, regime, raw return. Default last 12 records. |
+| `quant backtest --signal-type X --years N --top-n N` | Walk-forward backtest. Default: momentum, 5yr, top-4. Prints metrics + `summary_str()` vs VFV benchmark. |
 | `quant dashboard [--port N]` | Launch FastAPI server at localhost:8501. Serves `/api/universe`, `/api/metrics`, `/api/signals`, `/api/status` + HTML dashboard. |
 
-### Phase 3 P0 Commands
+### Phase 3 Commands
 | Command | What it does |
 |---------|-------------|
-| `quant recommend [--cash N] [--save] [--optimize]` | Run full recommendation pipeline. `--optimize` uses Ledoit-Wolf Markowitz within-bucket weights instead of equal-weight. Prints weight comparison table then trade cards. |
-| `quant execute <ID> --price X --units Y [--date YYYY-MM-DD]` | Mark recommendation as executed. Atomically updates rec status + creates trade record with actual fill. |
-| `quant pending` | List all pending (unsaved/unexecuted) recommendations with rec IDs. |
-| `quant skip <ID>` | Mark a pending recommendation as skipped (not executed). |
-
-**Windows note**: Set `$env:PYTHONUTF8 = "1"` before running CLI commands or the Unicode bar characters crash the console. Example:
-```powershell
-$env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
-```
+| `quant recommend [--cash N] [--save] [--optimize] [--notify]` | Full recommendation pipeline. `--optimize`: Ledoit-Wolf Markowitz weights. `--save`: persists signals + trade cards. `--notify`: fires ntfy.sh alerts on BUY/SELL, regime change, drawdown. |
+| `quant execute <ID> --price X --units Y [--date YYYY-MM-DD]` | Mark recommendation as executed. Atomically updates rec status + creates trade record. |
+| `quant pending` | List all pending recommendations with rec IDs. |
+| `quant skip <ID>` | Mark a pending recommendation as skipped. |
+| `quant alert-test` | Fire a test ntfy.sh notification to verify the alert pipeline is wired. |
+| `quant daily-run [--cash N]` | Run the full daily pipeline interactively (fetch → momentum → vol_regime → recommend --optimize --save --notify). Stdout only — use `scripts/daily_run.py` for scheduled runs with file logging. |
 
 ---
 
@@ -137,13 +170,13 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 | XIC.TO | iShares S&P/TSX Capped Composite | Growth | Equity (CA) | 0.06% | TSX broad market |
 | HXQ.TO | Horizons NASDAQ-100 ETF | Growth | Equity (US) | 0.28% | Swap structure, tax-efficient in TFSA |
 | XEF.TO | iShares Core MSCI EAFE IMI | Growth | Equity (Dev ex-NA) | 0.22% | Developed markets ex North America |
-| CHPS.TO | Global X AI Semiconductor Index ETF | Growth | Equity (Global Semi) | 0.65% | Added 2026-05-22; replaces ZAG.TO; NVDA/TSMC/Broadcom/ASML/AMD top holdings |
+| CHPS.TO | Global X AI Semiconductor Index ETF | Growth | Equity (Global Semi) | 0.65% | Added 2026-05-22; replaced ZAG.TO; NVDA/TSMC/Broadcom/ASML/AMD top holdings |
 | VAB.TO | Vanguard Canadian Aggregate Bond | Stable | Fixed income (CA) | 0.09% | Broad Canadian bonds, intermediate duration |
-| HSAV.TO | Horizons High Interest Savings ETF | Stable | Cash equivalent | 0.11% | HISA wrapper, swap structure. STABLE_TICKERS now 2 (ZAG removed, 0.97 corr with VAB) |
+| HSAV.TO | Horizons High Interest Savings ETF | Stable | Cash equivalent | 0.11% | HISA wrapper, swap structure. STABLE_TICKERS = {VAB.TO, HSAV.TO} |
 | CDZ.TO | iShares S&P/TSX Dividend Aristocrats | Dividend | Equity-div (CA) | 0.66% | 5+ yr dividend growth companies |
 | VDY.TO | Vanguard FTSE Canadian High Dividend | Dividend | Equity-div (CA) | 0.22% | Bank/energy heavy, low MER |
 
-**Data loaded** (as of 2026-05-19 first pull, universe updated 2026-05-22):
+**Data loaded** (as of first pull 2026-05-19, universe updated 2026-05-22):
 - VFV.TO: 3,393 rows | XIC.TO: 5,018 | HXQ.TO: 2,528 | XEF.TO: 3,286
 - VAB.TO: 3,593 | HSAV.TO: 1,573 | CDZ.TO: 4,942 | VDY.TO: 3,393 | CHPS.TO: ~1,234
 - HSAV shortest history (~6yr, launched 2019). CHPS launched June 2021 (~1,234 trading days).
@@ -165,11 +198,19 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 
 **Trade thresholds**: Signal must clear `expected_return ≥ 2 × bid-ask + 0.5%`. Max 24 trades/year (CRA day-trade buffer). Min hold 14 days.
 
-**Capital tier**: Tier 1 ($0–$10k) — Canadian ETFs only. Tier 2 unlocks at $10k NAV (+ CA dividend stocks). Tier 3 at $25k (+ US-listed ETFs). Tier 4 at $50k (+ large-cap stocks).
+**Capital tier**: Tier 1 ($0–$10k) — Canadian ETFs only. Tier 2 unlocks at $10k NAV. Tier 3 at $25k. Tier 4 at $50k.
+
+**Optimizer block** (from `config/portfolio.yaml`):
+- `max_position_weight`: 0.40 (40% of bucket max per ticker)
+- `min_position_weight`: 0.05 (5% floor if included)
+- `rebalance_threshold`: 0.02 (weight changes < 2% → BELOW_THRESHOLD HOLD, not a trade)
+
+**Rebalance block**:
+- `min_rebalance_trade`: $50 (dollar floor for drift-SELL; prevents burning a trade slot on a trivial trim)
 
 ---
 
-## Current Signal Readings (2026-05-19)
+## Current Signal Readings (reference snapshot, 2026-05-19/2026-05-22)
 
 ### Momentum Signal (12-1 month, Jegadeesh-Titman 1993)
 
@@ -185,7 +226,7 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 | 8 | HSAV.TO | -0.750 | +2.85% |
 | 9 | VAB.TO | -1.000 | +2.24% |
 
-Scores are cross-sectional rank-normalized to [-1, +1]. CHPS.TO ranked #1 on first live run (AI semiconductor boom already in the data). ZAG.TO removed from universe 2026-05-22.
+Scores are cross-sectional rank-normalized to [-1, +1]. CHPS.TO ranked #1 on first live run — AI semiconductor boom already in the data.
 
 ### Vol Regime Signal (realized vol percentile, XIC.TO benchmark)
 
@@ -200,7 +241,9 @@ Regime thresholds: LOW_VOL (<25th pct) = +1.0, NORMAL (25–75th) = +0.3, HIGH_V
 
 ---
 
-## Backtest Results (2026-05-19)
+## Backtest Results
+
+### Momentum Strategy (2026-05-19)
 
 **Configuration**: Momentum signal, 5-year walk-forward, equal-weight top-4, monthly rebalance, long-only, VFV.TO benchmark.
 
@@ -217,48 +260,56 @@ Regime thresholds: LOW_VOL (<25th pct) = +1.0, NORMAL (25–75th) = +0.3, HIGH_V
 | Rebalances | 60 | — |
 | Avg holdings/period | 4.0 | — |
 
-**Last 3 rebalance picks**:
-- 2026-02-27: XIC.TO, VDY.TO, XEF.TO, CDZ.TO
-- 2026-03-30: XIC.TO, VDY.TO, XEF.TO, CDZ.TO
-- 2026-04-29: VDY.TO, XIC.TO, CDZ.TO, HXQ.TO
-
-**Interpretation**: Strategy slightly trails VFV on raw return (+13.98% vs +16.60%) but achieves this with meaningfully lower drawdown (-15.9% vs -22.2%), lower beta (0.685), and a Sortino of 1.03 indicating well-controlled downside risk. Alpha of +1.19% is modest but positive. The strategy captures ~69% of market upside with ~72% of market downside — a reasonable risk-adjusted profile for a TFSA with a 20% drawdown ceiling.
+**Interpretation**: Strategy trails VFV on raw return (+13.98% vs +16.60%) but achieves meaningfully lower drawdown (-15.9% vs -22.2%), lower beta (0.685), and Sortino of 1.03. Alpha +1.19% modest but positive. Captures ~69% of market upside with ~72% of market downside — reasonable risk-adjusted profile for a TFSA with 20% drawdown ceiling.
 
 ---
 
-### Mean Reversion Signal (2026-05-22)
+### Mean Reversion Signal (2026-05-22) — STANDALONE NOT VIABLE
 
 **Configuration**: MeanReversionSignal (20d/60d z-score, regime-conditional TS/CS), 5-year walk-forward, equal-weight top-4, monthly rebalance, VFV.TO benchmark.
 
 | Metric | Strategy | VFV Benchmark | vs Momentum |
 |--------|----------|--------------|-------------|
 | Ann. Return | +4.24% | +16.51% | −9.74pp |
-| Ann. Vol | 9.93% | — | −1.82pp |
-| Sharpe | −0.027 | 0.805 | −0.834 |
-| Sortino | −0.038 | — | −1.073 |
+| Sharpe | **−0.027** | 0.805 | −0.834 |
 | Max Drawdown | **−24.18%** | −22.19% | −8.28pp |
-| Calmar | 0.175 | — | −0.704 |
-| Alpha vs VFV | **−6.59%** | — | −7.78pp |
-| Beta | 0.527 | — | −0.158 |
-| Monthly win rate | 55.7% (34/61) | — | — |
+| Alpha vs VFV | **−6.59%** | — | — |
 | Monthly corr vs momentum | **+0.836** | — | — |
 
-**Verdict: standalone mean reversion is not viable on this universe.**
-- Max drawdown −24.18% violates the 20% soft ceiling.
-- Sharpe −0.027: barely beats cash. Momentum: 0.807.
-- Alpha −6.59%: deeply negative.
-- Monthly return correlation with momentum is 0.836 — nearly the same signal, no ensemble diversification benefit.
+**Verdict**: Standalone MR fails on this universe. DD violates 20% ceiling, Sharpe near-zero, 0.84 correlation with momentum means no ensemble diversification benefit. Signal preserved in codebase — not wired into recommendation engine. Re-evaluate at Tier 2+ with individual equities (20+ names for cross-sectional dispersion).
 
-**Why it fails on 9 ETFs**: Too few tickers for cross-sectional dispersion. Monthly rebalance is too slow for the 20d z-score window (reversals resolve within 1 week). Both MR and momentum are cross-sectional ranking signals on the same universe and end up selecting mostly the same 4 tickers.
+---
 
-**Signal status**: Code complete, tests passing, CLI accessible (`quant signals --signal-type mean_reversion`). **Not wired into the recommendation engine.** Potential value: (a) position-sizing modifier in ensemble at higher tiers, (b) revisit when universe expands to 20+ individual stocks, (c) intraweek rebalance experiment.
+### H004 — Volatility Targeting / Moreira-Muir (2026-05-28) — KILLED
+
+**Configuration**: 5yr walk-forward, vol-scaled portfolio weights on top-4 equity tickers, monthly rebalance. Vol scaling applied after signal ranking using 21-day realized variance.
+
+| Metric | Vol-Target (RV21) | Equal-Weight Baseline | Verdict |
+|--------|-------------------|-----------------------|---------|
+| Sharpe | 1.0623 | 0.9768 | PASS |
+| Max DD | -17.28% | -18.20% | PASS |
+| Alpha vs VFV | +4.94% | +4.05% | PASS |
+| Corr vs baseline (monthly returns) | **0.9862** | — | **KILL** |
+| Leverage effect Corr(fwd_ret, RV) | +0.03 to +0.30 all 7 ETFs | — | **KILL** |
+
+**Kill criteria triggered**: (1) Leverage effect absent — Moreira-Muir requires Corr(E[r], σ²) < 0; all 7 equity ETFs show the opposite on 2021-2026 data (COVID recovery + AI boom = high-vol months followed by rallies). (2) Monthly return corr 0.9862 with equal-weight baseline — operationally indistinguishable. Structural failure, not parameter failure. Graveyard: `docs/research/graveyard/H004_vol_targeting.md`.
+
+---
+
+### H005 — RSI(21) Momentum Filter (2026-05-26) — KILLED
+
+**Configuration**: RSI(21) > 50 gate on top of existing momentum signal. Two windows tested: 9-ETF (34 months) and 8-ETF extended (107 months, no CHPS.TO).
+
+| Window | t-stat (incremental α) | Agreement rate | Verdict |
+|--------|------------------------|----------------|---------|
+| 9-ETF (34m) | NaN (zero variance) | 96.2% | KILL |
+| 8-ETF (107m) | -1.00 | 83.5% | KILL |
+
+Divergence: when momentum says BUY but RSI gate says NO, forward return = **+7.30%** — the gate suppressed valid signals. RSI(21) is a bounded monotonic transform of the same positive-drift construct as 12-1 momentum; mathematical redundancy is structural, not a parameter issue. Graveyard: `docs/research/graveyard/H005_rsi_momentum_filter.md`. Code preserved at `src/signals/rsi.py` (not in signal path).
 
 ---
 
 ## Architectural Decisions (from LEARNING.md)
-
-### 2026-05-19 — Phase 2 components landed together
-Signals, backtester, and API dashboard built simultaneously. Rationale: signals without backtests are dangerous. Dashboard without signals has nothing to show.
 
 ### 2026-05-17 — Manual execution (Wealthsimple, no IBKR automation)
 CRA day-trade reclassification risk on TFSA. $0 Wealthsimple commission vs $1 IBKR minimum. Manual circuit breaker against bugs. Revisit at Tier 3 ($25k+).
@@ -267,66 +318,96 @@ CRA day-trade reclassification risk on TFSA. $0 Wealthsimple commission vs $1 IB
 Optimizer works *within* buckets (Growth/Stable/Dividend). Bucket weights only shift on regime signals. Pure Markowitz overconcentrates on a 9-ticker universe.
 
 ### 2026-05-17 — Horizon 3–7 years
-Original 1–3yr horizon mathematically conflicted with 20% drawdown ceiling (~30% breach probability). Extended to 3–7yr. Unlocks growth allocation without breaking risk math.
+Original 1–3yr horizon conflicted mathematically with 20% drawdown ceiling (~30% breach probability). Extended to 3–7yr. Unlocks growth allocation without breaking risk math.
 
-### 2026-05-17 — Canadian ETFs only at Tier 1
-Avoid 1.5% Wealthsimple FX drag. Universe expands automatically at capital tier breaks.
+### 2026-05-22 — Universe swap: ZAG.TO removed, CHPS.TO added to growth bucket
+ZAG.TO had 0.97 correlation with VAB.TO — zero diversification benefit. CHPS.TO (Global X AI Semiconductor, TSX-listed, 1234d history, MER 0.65%) replaced it. STABLE_TICKERS shrinks to {VAB.TO, HSAV.TO}.
+
+### 2026-05-22 — Research pipeline integrated: quant-research skill + Council Config G
+Validated concept before implementation. quant-research skill runs 4-agent parallel pipeline → Council deliberation → DEEPER_LEARNING.md entry. Mean reversion backtest demonstrated the failure mode this pipeline catches: a signal that the factor zoo literature would have flagged before the build.
+
+### 2026-05-23 — Structured hypothesis lifecycle tracker at docs/research/
+Markdown-only. PROPOSED → COUNCIL_REVIEWED → BACKTESTED → PROMOTED/KILLED/SHELVED workflow. Graveyard entries distinguish structural failures (idea is wrong) from parameter failures (idea is wrong for this constraint set) — determines whether to revisit at Tier 2.
+
+### 2026-05-23 — Ledoit-Wolf + SLSQP within-bucket optimizer
+Sample covariance becomes unreliable as N approaches T. LW shrinkage toward structured target with analytically computed intensity — no hyperparameter tuning. SLSQP handles equality + inequality constraints natively. Stable bucket always equal-weight (HSAV near-zero vol would cause ~95/5 concentration). Falls back to equal-weight on solver failure.
+
+### 2026-05-24 — quant-research skill upgrade: 4-agent parallel pipeline
+Academic Agent (7 databases) + Practitioner Agent (10 verified sites) fire in parallel (Wave 1). Replication/Criticism Agent (9 targeted searches + 3 mandatory factor zoo checks) fires after Academic returns (Wave 2). Synthesis inline. Quality floor: all 10 practitioner sites checked, factor zoo papers explicitly consulted, at least one Council question addresses replication strength and one addresses Canadian ETF applicability.
+
+### 2026-05-26 — Signal persistence: signal_scores table and --save contract
+Signals computed on-the-fly are unauditable. `signal_scores.run_id = recommendations.run_id` is the audit path — when a trade card fires, the signal scores that drove it are retrievable. `--save` gates all persistence; no silent DB writes from read-only commands. `SignalResult.ticker_metadata()` is the two-tier extraction contract — per-ticker dicts rename keys via `_PER_TICKER_KEY_MAP`; broadcast scalars pass through verbatim. `storage.py` knows nothing about signal internals.
+
+### 2026-05-26 — SELL / Rebalance logic: 7 design decisions
+1. **Drift trigger reuses `needs_rebalance`** from `bucket_allocation()` — one truth source, no synchronization risk.
+2. **Signal-SELL cost gate**: `|combined_signal| × anchor_return ≥ 2 × spread + profit_floor` — symmetric with BUY gate.
+3. **Drift-SELL cost gate**: `|delta_dollars| ≥ min_rebalance_trade` ($50 floor) — dollar-based because drift is a percentage deviation but cost penalty is in dollars.
+4. **Single `action="SELL"` with `sell_reason`**: CLI and execute workflow treat all SELLs identically; distinction logged as `"SIGNAL"` or `"DRIFT"` on `TradeCard`. Avoids branching in execute logic.
+5. **Signal-SELL = full exit, drift-SELL = partial trim** — signal is conviction-based, drift is mechanical.
+6. **Tax-loss harvesting skipped** — TFSA has no capital gains tax.
+7. **Same `quant recommend` + `quant execute` pipeline** — no new commands needed.
+Schema change: `sell_reason TEXT` column + `migrate_recommendations_v3()` for existing DBs.
+
+### 2026-05-27 — ntfy.sh alert pipeline: state machine for DRAWDOWN trigger
+ntfy.sh confirmed over Telegram (single HTTP POST, no bot setup). DRAWDOWN trigger uses a state machine: fires once on first crossing above 15% threshold, logs a RECOVERED row (no POST) when portfolio returns below, re-arms for the next crossing. `send_alert` never raises — network failure logs a WARNING and returns. Recommendation pipeline integrity is not conditional on ntfy.sh availability.
+
+### 2026-05-28 — DailyRunner: fail-forward, not fail-fast
+Four steps: fetch → momentum signal → vol_regime signal → recommend --optimize --save --notify. Runs all steps regardless of individual failures — fail-fast would skip `recommend` if a signal step errored, defeating the purpose of automation. Error alerts via ntfy.sh priority=5 on any step failure. Two callers: `scripts/daily_run.py` (Task Scheduler, writes dated log) and `quant daily-run` (interactive, stdout only). `-WakeToRun ON`, `-StartWhenAvailable ON` in Task Scheduler so laptop wakes for the scheduled run.
+
+### 2026-05-28 — Integration test avoids real VolRegimeSignal
+VolRegimeSignal requires 1291 rows of XIC.TO history. Constructing that in a test fixture would be slow and couple the integration test to a specific signal's data requirement. The regime `SignalResult` is constructed directly — the signal is already unit-tested in test_signals.py. Integration test focuses on layer connectivity, not signal correctness.
 
 ---
 
-## Bugs Found and Fixed (Phase 2)
+## Bugs Found and Fixed
 
-### Bug 1: Backtest top-N slice selected bottom-N tickers
+### Bug 1 (2026-05-19): Backtest top-N slice selected bottom-N tickers
 - **File**: `src/backtest/engine.py`
-- **Root cause**: `result.ranked()` returns descending (highest first). `ranked[-top_n:]` selects the *last* N = lowest-scored tickers (bonds). The `if s > 0` guard filtered all of them out → cash every period → 0.0 return, NaN Sharpe.
-- **Fix**: Changed `ranked[-config.top_n:]` to `ranked[:config.top_n]` in both branches.
-- **Lesson**: Always comment sort direction when slicing ranked lists.
+- **Root cause**: `result.ranked()` returns descending. `ranked[-top_n:]` = lowest-scored tickers. `if s > 0` guard filtered all of them → cash every period → 0.0 return, NaN Sharpe.
+- **Fix**: Changed `ranked[-config.top_n:]` to `ranked[:config.top_n]`.
 
-### Bug 2: Vol regime lookback insufficient
+### Bug 2 (2026-05-19): Vol regime lookback insufficient
 - **File**: `src/cli/phase2_commands.py`
-- **Root cause**: Prices loaded with hardcoded `lookback_days=1260` but `VolRegimeSignal.lookback_days = 1291`. Benchmark check failed → all scores 0.0, regime "unknown".
-- **Fix**: Select signal first, then load `max(sig.lookback_days, 1260)` days.
+- **Root cause**: Prices loaded with hardcoded 1260-day window; VolRegimeSignal needs 1291 days. Signal silently returned regime=unknown, scores=0.0.
+- **Fix**: Instantiate signal first, then load `sig.lookback_days` days.
 
-### Bug 3: Format string crash on missing metadata
-- **File**: `src/cli/phase2_commands.py`
-- **Root cause**: `:.1%` format spec applied to string `'n/a'` when metadata absent (unknown regime path).
+### Bug 3 (2026-05-19): Format string crash on missing metadata
+- **Root cause**: `:.1%` format spec applied to string `'n/a'` when metadata absent.
 - **Fix**: Guard with `if value is not None` before formatting.
 
-### Bug 4: Empty Series RangeIndex crash in momentum signal
-- **File**: `src/signals/momentum.py`
-- **Root cause**: `pd.Series(dtype=float)` has `RangeIndex(int64)`. Comparing `int64 index <= Timestamp` raises `TypeError`.
-- **Fix**: Early guard — skip ticker if `series.empty` or index is int64.
+### Bug 4 (2026-05-19): Empty Series RangeIndex crash in momentum signal
+- **Root cause**: `pd.Series(dtype=float)` has int64 RangeIndex. `series.index <= Timestamp` raises TypeError.
+- **Fix**: Early guard — skip ticker if series.empty or index is int64.
 
-### Bug 5: Flaky test fixture (weak random drift)
-- **File**: `tests/test_signals.py`
-- **Root cause**: Mock prices used stochastic data with ±0.001 daily drift, swamped by 0.01 vol. Rank ordering not guaranteed.
-- **Fix**: Replaced with deterministic `np.linspace`/`np.full` series.
+### Bug 5 (2026-05-19): Flaky test fixture (weak random drift)
+- **Root cause**: ±0.001 daily drift swamped by 0.01 vol over 231-day window. Rank ordering not guaranteed.
+- **Fix**: Deterministic `np.linspace`/`np.full` price series.
 
 ---
 
 ## Test Suite
 
 ```
-tests/test_metrics.py            11 tests — all portfolio/metrics.py functions
-tests/test_signals.py            11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
-tests/test_recommendations.py   22 tests — combined signals, target weights, all gate types, cold-start math
-tests/test_mean_reversion.py     16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
-tests/test_optimizer.py          31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
-tests/test_storage.py            17 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold
-tests/test_sell_logic.py         16 tests — signal-SELL gate, drift-SELL gate, sell_reason field, partial vs full exit
-tests/test_signal_persistence.py  9 tests — ticker_metadata, persist_signals, query_signal_history
-tests/test_alerts.py             14 tests — ntfy transport, 3 alert triggers, drawdown state machine, first-run paths
-tests/test_daily_run.py           9 tests — DailyRunner steps, timeout-as-failure, cash flag, log branching
-tests/test_rsi_signal.py         23 tests — RSI math, Wilder SMMA, gate logic, metadata, edge cases
-tests/test_H005_rsi_backtest.py   1 test  — H005 backtest regression (graveyard artifact)
-tests/test_backtest.py            8 tests — avg_holdings_per_period > 0, summary_str(), metrics keys, ValueError
-tests/test_integration.py        11 tests — full pipeline: signal layer → backtest layer → recommend layer
+tests/test_metrics.py              11 tests — portfolio/metrics.py: Sharpe, Sortino, Calmar, max DD, beta, alpha
+tests/test_signals.py              11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
+tests/test_recommendations.py      21 tests — combined signals, target weights, all gate types, cold-start math
+tests/test_mean_reversion.py       16 tests — MeanReversionSignal shape, bounds, sign convention, warmup, regime weights
+tests/test_optimizer.py            31 tests — BucketOptimizer constraints, LW PD check, 2-ticker, fallbacks, integration
+tests/test_storage.py              23 tests — SQLite schema, CRUD, VWAP, annual trade count, min-hold, alerts log
+tests/test_sell_logic.py           16 tests — signal-SELL gate, drift-SELL gate, sell_reason, partial vs full exit
+tests/test_signal_persistence.py    9 tests — ticker_metadata(), persist_signals(), query_signal_history()
+tests/test_alerts.py               14 tests — ntfy transport, 3 alert triggers, DRAWDOWN state machine, first-run paths
+tests/test_daily_run.py             9 tests — DailyRunner steps, timeout-as-failure, cash flag, log branching
+tests/test_rsi_signal.py           24 tests — RSI math, Wilder SMMA, gate logic, metadata, edge cases
+tests/test_H005_rsi_backtest.py     1 test  — H005 backtest regression (graveyard artifact)
+tests/test_backtest.py              8 tests — avg_holdings > 0, summary_str(), metrics keys, ValueError
+tests/test_integration.py          10 tests — full pipeline: signal layer → backtest layer → recommend layer
+─────────────────────────────────────────────────────────────────────────────
+TOTAL                             204 tests — 204/204 passing as of v1.0.0-tier1 (2026-05-28)
 ```
 
 **Run**: `python -m pytest tests/ -v`
-**Status**: 204/204 passing as of 2026-05-28 (v0.6.0-test-coverage).
-
-**Known test gaps**: None outstanding — all Phase 3 subsystems now have targeted coverage.
+**Known test gaps**: None — all Phase 3 subsystems have targeted coverage.
 
 ---
 
@@ -339,12 +420,15 @@ tests/test_integration.py        11 tests — full pipeline: signal layer → ba
 | `prices` | Daily OHLCV per ticker. PK: (ticker, trade_date). |
 | `holdings` | Current positions. PK: ticker. Updated atomically on each trade. |
 | `trades` | Executed trade log with rationale field. |
-| `recommendations` | Signal-generated recommendations (not all become trades). |
+| `recommendations` | Signal-generated trade cards (BUY/SELL, all statuses). Includes `sell_reason` field. |
 | `metrics_snapshots` | Periodic risk/return snapshots per scope/metric/window. |
 | `run_log` | System event log with component + level. |
-| `signal_scores` | Persisted signal scores per ticker per run. PK: (run_date, ticker, signal_type). JOIN to recommendations via run_id. |
+| `signal_scores` | Persisted signal scores per ticker per run. PK: (run_date, ticker, signal_type). JOIN to `recommendations` via `run_id`. |
+| `alerts_log` | Alert event log: alert_type, payload, timestamp. Used by DRAWDOWN state machine to detect crossings and recoveries. |
 
-**Signal scores** are persisted to `signal_scores` via `quant signals --save` or `quant recommend --save`. JOIN path: `signal_scores.run_id = recommendations.run_id`.
+**Signal scores** are persisted via `quant signals --save` or `quant recommend --save`. JOIN path: `signal_scores.run_id = recommendations.run_id`.
+
+**Schema migration**: `migrate_recommendations_v3()` in `storage.py` adds `sell_reason TEXT` to existing databases with NULL default (no data loss).
 
 ---
 
@@ -354,84 +438,91 @@ tests/test_integration.py        11 tests — full pipeline: signal layer → ba
 - **Algorithm**: 12-1 month cross-sectional momentum
 - **Formula**: `raw = (P_{t-21} / P_{t-273}) - 1` per ticker, then rank-normalized to [-1, +1]
 - **Skip month**: 21 trading days skipped to avoid short-term reversal
-- **Reference**: Jegadeesh & Titman (1993). *Returns to Buying Winners and Selling Losers.* Journal of Finance, 48(1), 65–91.
+- **Reference**: Jegadeesh & Titman (1993). *Returns to Buying Winners and Selling Losers.* JF 48(1).
 - **Variants**: `ShortTermMomentum` (3-1 month, 63/21 days), `LongTermMomentum` (18-1 month, 378/21 days)
 
 ### VolRegimeSignal (src/signals/vol_regime.py)
 - **Algorithm**: 21-day realized vol of XIC.TO, percentile-ranked against 5yr history
 - **Thresholds**: <25th pct = LOW_VOL (+1.0), 25–75th = NORMAL (+0.3), 75–95th = HIGH_VOL (-0.5), >95th = CRISIS (-1.0)
-- **Broadcast**: Growth/dividend tickers get raw regime score. Stable tickers (VAB, ZAG, HSAV) get inverse (crisis = buy bonds).
-- **Reference**: Kritzman et al. (2012). *Regime Shifts: Implications for Dynamic Strategies.* Financial Analysts Journal.
+- **Broadcast**: Growth/dividend tickers get raw regime score. Stable tickers get inverse (crisis = buy bonds).
+- **Reference**: Kritzman et al. (2012). *Regime Shifts: Implications for Dynamic Strategies.* FAJ.
 
-### MeanReversionSignal (src/signals/mean_reversion.py)
-- **Algorithm**: Regime-conditional dual-window z-score mean reversion
-- **TS component**: `z_ts = 0.5 × z_20 + 0.5 × z_60` where each `z_N` = rolling z-score of daily log returns at N days
-- **TS normalization**: `tanh(z_ts)` — smooth compression to (−1, 1) per ticker
-- **CS component**: Rank-normalize `z_ts` across all tickers at run_date → [−1, +1]
-- **Combination**: `combined = w_ts × tanh(z_ts) + w_cs × z_cs`, sign-flipped, then final rank-normalize
-- **Regime weights**: CRISIS (0.70/0.30 TS/CS) → HIGH_VOL (0.60/0.40) → NORMAL (0.50/0.50) → LOW_VOL (0.35/0.65)
-- **Sign convention**: Positive score = oversold = buy pressure (matches momentum convention)
-- **Warmup**: 60 trading days minimum; insufficient data → 0.0 neutral
-- **References**: Jegadeesh (1990), Lehmann (1990), Asness/Moskowitz/Pedersen (2013)
-- **Backtest verdict**: Standalone not viable on 9-ETF universe (Sharpe −0.03, DD −24%, alpha −6.6%, 0.84 corr with momentum)
+### MeanReversionSignal (src/signals/mean_reversion.py) — not in recommendation engine
+- **Algorithm**: Regime-conditional dual-window z-score
+- **Formula**: `z_ts = 0.5 × z_20 + 0.5 × z_60`, normalized via `tanh()`, blended with cross-sectional rank
+- **Regime weights**: CRISIS (0.70/0.30 TS/CS) → NORMAL (0.50/0.50) → LOW_VOL (0.35/0.65)
+- **Status**: Complete and tested. Not wired into recommendation engine. Re-evaluate at Tier 2+.
+
+### Combined Signal (src/portfolio/recommendations.py)
+- **Formula**: `momentum × max(regime_score, 0)` for growth/dividend. Stable bucket: equal weight (1/n_stable).
+- **Rationale**: Clamping regime to 0 prevents sign-flip artifacts (neg × neg = pos) that would buy anti-momentum tickers in bad regimes.
+
+### BucketOptimizer (src/portfolio/optimizer.py)
+- **Covariance**: Ledoit-Wolf shrinkage (`sklearn.covariance.LedoitWolf`). Analytically optimal shrinkage intensity, no hyperparameter tuning.
+- **Expected return proxy**: `signal_i × annualized_vol_i` — signal scores in return-like units calibrated to each ticker's vol.
+- **Solver**: SLSQP (scipy). Constraints: sum(w)=1, w≥0, w≥5% if included, w≤40%.
+- **Fallback**: Equal-weight on solver failure — pipeline never crashes.
+- **Stable bucket**: Always equal-weight (HSAV near-zero vol causes degenerate concentration).
+- **Rebalance gate**: Weight changes < 2% → BELOW_THRESHOLD HOLD (preserves trade budget).
 
 ### Backtest Engine (src/backtest/engine.py)
 - **Method**: Walk-forward, monthly rebalance (21 trading days), equal-weight top-N by signal score
 - **Long-only**: Only holds tickers with positive signal scores (TFSA constraint)
 - **No lookahead**: Signals at time t use only data available at t
 - **Benchmark**: Buy-and-hold VFV.TO
+- **Output**: `BacktestResult` with `summary_str()` method for formatted multi-line metric display
 
 ---
 
 ## Phase 3 Roadmap
 
-Phase 3 goal: **within-bucket weight optimization + trade recommendation engine**. Signals generate scores; optimizer converts scores to target weights; recommendation engine applies cost gate and fires trade cards.
-
 ### P3.1 — Mean Reversion Signal ✅ COMPLETE (2026-05-22)
-- File: `src/signals/mean_reversion.py` — 16 tests passing
-- Regime-conditional dual-window z-score (20d/60d), tanh TS + CS rank, sign-flip
-- **Backtest result**: standalone not viable (Sharpe −0.03, DD −24.2%, alpha −6.6%, corr 0.84 vs momentum)
-- Signal complete in codebase; not wired into recommendation engine; revisit at Tier 2+ or with intraweek rebalance
+Signal complete in codebase; not viable standalone (Sharpe −0.03, DD −24.2%, corr 0.84 vs momentum). Not wired into recommendation engine.
 
-### P3.2 — Within-Bucket Optimizer
-- File: `src/portfolio/optimizer.py`
-- Input: signal scores + current holdings + bucket constraints from `portfolio.yaml`
-- Method: Markowitz mean-variance with Ledoit-Wolf shrinkage covariance (addresses the open question from LEARNING.md about short history)
-- Constraint: weights stay within bucket tolerances; no shorting; sum = 1 within bucket
-- Output: target weights per ticker
+### P3.2 — Within-Bucket Optimizer ✅ COMPLETE (2026-05-23)
+`src/portfolio/optimizer.py`. Ledoit-Wolf + SLSQP. `--optimize` flag on `quant recommend`. 31 tests.
 
 ### P3.3 — Signal Persistence ✅ COMPLETE (2026-05-26)
-**Phase 3 P3.3 — Signal Persistence. Complete (2026-05-26).** `signal_scores` table. `persist_signals()` + `query_signal_history()` in storage.py. `quant signals --save`, `quant recommend --save` now write signal evidence before trade cards. `quant signal-history` command. 9 new tests. 143/143 passing.
+`signal_scores` table. `persist_signals()` + `query_signal_history()` in `storage.py`. `quant signal-history` command. 9 tests. v0.3.0-signal-persistence.
 
-### P3.4 — Trade Recommendation Engine
-- File: `src/portfolio/recommendations.py`
-- Input: target weights (optimizer output) + current holdings + prices
-- Cost gate: `expected_return ≥ 2 × bid_ask_spread + 0.5%` (already in `portfolio.yaml`)
-- CRA gate: check annual trade count < 24 before firing
-- Output: trade cards persisted to `recommendations` table, surfaced via `quant recommend`
+### P3.4 — SELL / Rebalance ✅ COMPLETE (2026-05-26)
+Signal-driven full exit + drift-triggered partial trim. `sell_reason` field. Schema migration. 16 tests.
 
-### P3.5 — Phone Alert Pipeline
-- Open question from LEARNING.md: Telegram bot vs ntfy.sh vs email
-- Trigger: new trade recommendation, drawdown alert (>15%), regime change
-- Lean toward ntfy.sh (dead simple, no bot setup)
+### P3.5 — Phone Alert Pipeline ✅ COMPLETE (2026-05-27)
+ntfy.sh. Three triggers: NEW_RECOMMENDATION, REGIME_CHANGE, DRAWDOWN. `alerts_log` table. `--notify` flag. `quant alert-test`. 14 tests. v0.4.0-alerts.
 
-### P3.6 — Scheduled Daily Run
-- Windows Task Scheduler or a simple `.bat` wrapper
-- Run: `quant fetch --incremental && quant signals --signal-type momentum && quant signals --signal-type vol_regime`
-- Log output to `logs/YYYY-MM-DD.log`
+### P3.6 — Scheduled Daily Run ✅ COMPLETE (2026-05-28)
+`DailyRunner` in `src/cli/daily_run_command.py`. `quant daily-run`. `scripts/daily_run.py`, `scripts/daily_run.bat`, `scripts/setup_scheduler.ps1`. 9 tests. v0.5.0-daily-run.
 
-### P3.7 — Backtest Test Coverage
-- Unit test: `avg_holdings_per_period > 0` on known-positive universe
-- Unit test: `VolRegimeSignal` with synthetic price series
-- Integration test: full pipeline fetch → signal → backtest
+### P3.7 — Test Coverage Closure ✅ COMPLETE (2026-05-28)
+`BacktestResult.summary_str()`. `tests/test_backtest.py` (8 tests). `tests/test_integration.py` (10 tests). Alert first-run gap tests. 204/204 passing. v0.6.0-test-coverage.
 
 ---
 
-## Open Questions (from LEARNING.md)
+## Hypothesis Tracker
 
-1. **Covariance estimation with short history**: Use Ledoit-Wolf shrinkage for the optimizer. Short ETF histories (HSAV: ~6yr) mean sample covariance is noisy. Shrinkage pulls toward identity matrix.
-2. **Phone alerts**: Telegram bot vs ntfy.sh. ntfy.sh leans simpler — evaluate in Phase 3.5.
-3. **Regime detection method**: Simple vol thresholds (current) vs hidden Markov model vs VIX-based. Current vol-percentile approach is live and working. Compare HMM in Phase 3 backtest.
+| ID | Hypothesis | Status | Outcome | Reference |
+|----|-----------|--------|---------|-----------|
+| H001 | Mean reversion standalone signal | KILLED (2026-05-22) | Parameter failure — 9-ETF universe too small, monthly rebalance too slow for 20d window | `graveyard/H001_mean_reversion_standalone.md` |
+| H004 | Volatility targeting / Moreira-Muir scaling | KILLED (2026-05-28) | Structural failure — leverage effect absent 7/7 ETFs, corr 0.9862 with baseline | `graveyard/H004_vol_targeting.md` |
+| H005 | RSI(21) > 50 momentum gate | KILLED (2026-05-26) | Structural failure — 96.2% agreement, t=NaN, gate suppresses +7.30% valid signals | `graveyard/H005_rsi_momentum_filter.md` |
+| H006 | Volume spike as regime indicator | SHELVED | ETF structural incompatibility (creation/redemption noise, Baker & Stein inversion) | `hypotheses/H006_volume_spike_regime.md` |
+
+**No active candidates.** Next hypothesis requires a new file through `/quant-research` pipeline.
+
+**DEEPER_LEARNING entries**: DL-001 through DL-014 (14 entries). See `docs/DEEPER_LEARNING.md`.
+
+---
+
+## Open Questions (Tier 2)
+
+1. **Capital tier transition automation**: When NAV hits $10k, what does a clean tier transition look like? Auto-update `capital_tier` in YAML? Notify and prompt? Freeze recommendations until operator confirms?
+
+2. **Covariance estimation at Tier 2**: Ledoit-Wolf is well-suited for 9 ETFs. With 20–40 assets (Tier 2 individual stocks), the N/T ratio degrades. Evaluate non-linear shrinkage (Ledoit-Wolf 2020) vs Oracle Approximating Shrinkage before first Tier 2 optimizer run.
+
+3. **Regime detection comparison**: Hidden Markov Model vs current vol-percentile approach vs VIX-based. Current approach is live and working. Compare HMM in a Phase 4 backtest when Tier 2 data is available.
+
+4. **H001 mean-reversion re-evaluation at Tier 2**: Parameter failure (small universe, monthly rebalance too slow) — revisit once universe expands to 20+ individual equities with meaningful cross-sectional dispersion.
 
 ---
 
@@ -442,8 +533,9 @@ Phase 3 goal: **within-bucket weight optimization + trade recommendation engine*
 3. Check `LEARNING.md` for any decisions or bugs logged since this doc was last updated.
 4. Run `python -m pytest tests/ -v` to confirm baseline is green before any change.
 5. Run `quant signals --signal-type momentum` to confirm live signals are working.
-6. Hypothesis queue: H006 (volume spike, SHELVED Tier 2+), H003 (residual reversal, SHELVED Tier 2+). No CANDIDATE hypotheses currently active — next signal work requires a new hypothesis file through `/quant-research`. Research pipeline is live.
+6. **No active hypothesis candidates.** Any new signal idea requires a new hypothesis file through `/quant-research`. Research pipeline is live. Watchlist: H006 (volume spike, SHELVED Tier 2+).
+7. **Next milestone trigger**: NAV ≥ $10,000 CAD unlocks Tier 2.
 
 ---
 
-*Last updated: 2026-05-28. v0.7.0-hypothesis-cleanup — H004 (Moreira-Muir vol targeting) KILLED: leverage effect absent 7/7 ETFs, monthly return corr 0.9862 with baseline. H005 (RSI(21) filter) KILLED: DL-014 supersedes DL-012 with backtest evidence (t=NaN/−1.00, 96.2% agreement, +7.30% divergence). Both graveyard entries written. No src/ changes. 204/204 tests still passing.*
+*Last updated: 2026-05-28. v1.0.0-tier1 — Tier 1 complete. All Phase 3 subsystems shipped (P3.3 signal persistence, SELL/rebalance, P3.5 alerts, P3.6 daily run, P3.7 test coverage). H004 + H005 KILLED. H006 SHELVED. 204/204 tests passing. Next milestone: NAV ≥ $10k (Tier 2).*
