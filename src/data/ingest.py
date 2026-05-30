@@ -6,6 +6,7 @@ Incremental: only pulls dates after the latest stored date per ticker.
 """
 from __future__ import annotations
 
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -64,16 +65,23 @@ def df_to_rows(ticker: str, df: pd.DataFrame) -> list[dict]:
     return rows
 
 
-def ingest_universe(years: int = 20, incremental: bool = True) -> dict[str, int]:
+def ingest_universe(
+    years: int = 20,
+    incremental: bool = True,
+    retries: int = 3,
+    backoff_seconds: float = 2.0,
+) -> dict[str, int]:
     """
     Pull OHLCV for every ticker in the universe.
 
     Args:
         years: history depth on a full pull.
         incremental: if True, fetch only since latest stored date per ticker.
+        retries: attempts per ticker before marking it failed (transient errors).
+        backoff_seconds: base backoff between retries; doubles each attempt.
 
     Returns:
-        dict mapping ticker -> rows inserted.
+        dict mapping ticker -> rows inserted (-1 marks a ticker that failed all retries).
     """
     universe = load_universe()
     today = date.today()
@@ -92,15 +100,25 @@ def ingest_universe(years: int = 20, incremental: bool = True) -> dict[str, int]
             results[ticker] = 0
             continue
 
-        try:
-            df = fetch_ticker(ticker, start, today)
-            rows = df_to_rows(ticker, df)
-            n = upsert_prices(rows)
-            results[ticker] = n
-            log("ingest", "INFO", f"{ticker}: {n} rows from {start} to {today}")
-        except Exception as e:
-            log("ingest", "ERROR", f"{ticker}: {type(e).__name__}: {e}")
+        last_err: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                df = fetch_ticker(ticker, start, today)
+                rows = df_to_rows(ticker, df)
+                n = upsert_prices(rows)
+                results[ticker] = n
+                log("ingest", "INFO", f"{ticker}: {n} rows from {start} to {today}")
+                last_err = None
+                break
+            except Exception as e:  # noqa: BLE001 — per-ticker isolation, retried with backoff
+                last_err = e
+                log("ingest", "WARNING",
+                    f"{ticker}: attempt {attempt}/{retries} failed: {type(e).__name__}: {e}")
+                if attempt < retries:
+                    time.sleep(backoff_seconds * (2 ** (attempt - 1)))
+        if last_err is not None:
+            log("ingest", "ERROR", f"{ticker}: all {retries} attempts failed: {last_err}")
             results[ticker] = -1
-            # Don't raise — one bad ticker shouldn't kill the whole run.
+            # Don't raise — one bad ticker shouldn't kill the run; fetch() reports failures.
 
     return results

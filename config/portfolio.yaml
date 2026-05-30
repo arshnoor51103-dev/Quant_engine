@@ -85,3 +85,9 @@ alerts:
 daily_run:
   default_cash: 350.0        # CAD to deploy in recommend step; set to 0 when no new capital
   step_timeout_seconds: 300  # per-step subprocess timeout; TimeoutExpired treated as FAIL
+
+# Data ingestion robustness (F3)
+data:
+  fetch_retries: 3            # attempts per ticker on transient yfinance failure
+  fetch_backoff_seconds: 2.0  # base backoff in seconds; doubles each retry
+  fetch_max_failures: 0       # `quant fetch` exits non-zero when failed tickers > this count

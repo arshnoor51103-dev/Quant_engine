@@ -55,7 +55,13 @@ def fetch(
 ) -> None:
     """Pull OHLCV for every ticker in the universe."""
     console.print(f"[cyan]Fetching universe — years={years}, full={full}[/cyan]")
-    results = ingest_universe(years=years, incremental=not full)
+    data_cfg = load_portfolio_config().get("data", {})
+    results = ingest_universe(
+        years=years,
+        incremental=not full,
+        retries=int(data_cfg.get("fetch_retries", 3)),
+        backoff_seconds=float(data_cfg.get("fetch_backoff_seconds", 2.0)),
+    )
     table = Table(title="Ingest Results")
     table.add_column("Ticker")
     table.add_column("Rows inserted", justify="right")
@@ -68,6 +74,15 @@ def fetch(
         else:
             table.add_row(ticker, str(n), "[green]ok[/green]")
     console.print(table)
+
+    # F3: fail loud — exit non-zero when failures exceed the configured threshold,
+    # so the daily run reports the failure instead of recommending on stale data.
+    failed = [t for t, n in results.items() if n == -1]
+    if len(failed) > int(data_cfg.get("fetch_max_failures", 0)):
+        console.print(
+            f"[red]Fetch failed for {len(failed)} ticker(s): {', '.join(failed)}[/red]"
+        )
+        raise typer.Exit(len(failed))
 
 
 @app.command()
