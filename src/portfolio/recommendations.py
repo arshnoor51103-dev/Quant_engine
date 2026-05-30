@@ -362,6 +362,7 @@ def generate_trade_cards(
                     combined_signal=combined,
                     expected_return_pct=combined * anchor_return,
                     gate_status=gate, gate_reason=reason,
+                    cost_estimate=2 * spread,
                     sell_reason="DRIFT",
                 ))
                 continue

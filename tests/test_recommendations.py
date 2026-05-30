@@ -25,6 +25,7 @@ from src.portfolio.recommendations import (
     generate_trade_cards,
 )
 from src.signals.base import SignalResult
+from src.portfolio.model import Holding
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -407,3 +408,43 @@ def test_zero_spread_override_is_honoured():
     # With the bug (spread=spread_proxy=0.10 -> threshold 0.205) VFV would SKIP_COST.
     assert vfv.action == "BUY"
     assert vfv.cost_estimate == pytest.approx(0.005)
+
+
+# ─── drift-SELL cost_estimate (F5) ────────────────────────────────────────────
+
+def test_drift_sell_sets_cost_estimate():
+    """F5: a drift trim must populate cost_estimate (= 2*spread), not leave it None."""
+    cfg = {
+        "allocation": {
+            "growth":   {"target": 0.10, "tolerance": 0.01},  # tiny target -> growth overweight
+            "stable":   {"target": 0.25, "tolerance": 0.05},
+            "dividend": {"target": 0.15, "tolerance": 0.05},
+        },
+        "trading": {
+            "spread_proxy": 0.0005,
+            "anchor_return_annualized": 0.1398,
+            "profit_floor": 0.005,
+            "trade_threshold_multiplier": 2.0,
+            "max_trades_per_year": 24,
+            "cra_warn_threshold": 20,
+            "min_holding_days": 14,
+        },
+        "rebalance": {"min_rebalance_trade": 50.0},
+    }
+    holdings = [Holding(ticker="VFV.TO", units=100.0, avg_cost=100.0,
+                        bucket="growth", last_price=100.0)]  # $10k, growth = 100% (overweight)
+    cards = generate_trade_cards(
+        momentum_result=_mom_result({"VFV.TO": 0.01, "VAB.TO": 0.0}),
+        regime_result=_regime_result("normal"),
+        holdings=holdings,
+        portfolio_config=cfg,
+        universe_map={"VFV.TO": {"bucket": "growth"}, "VAB.TO": {"bucket": "stable"}},
+        portfolio_nav=10000.0,
+        cash=0.0,
+        annual_trade_count=0,
+        last_buy_dates={},
+        latest_prices={"VFV.TO": 100.0, "VAB.TO": 25.0},
+    )
+    drift = next((c for c in cards if c.sell_reason == "DRIFT" and c.action == "SELL"), None)
+    assert drift is not None, f"expected a DRIFT SELL card; got {[(c.ticker, c.action, c.sell_reason) for c in cards]}"
+    assert drift.cost_estimate == pytest.approx(2 * 0.0005)
