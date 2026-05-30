@@ -192,7 +192,6 @@ def generate_trade_cards(
     min_hold: int = int(trading.get("min_holding_days", 14))
     min_rebalance_trade: float = float(rebalance_cfg.get("min_rebalance_trade", 50.0))
 
-    cost_threshold = multiplier * spread_proxy + profit_floor
     opt_cfg = portfolio_config.get("optimizer", {})
     rebalance_threshold: float = opt_cfg.get("rebalance_threshold_pct", 0.02)
     total_capital = portfolio_nav + cash
@@ -241,7 +240,8 @@ def generate_trade_cards(
         meta = universe_map[ticker]
         bucket = meta.get("bucket", "unknown")
         combined = combined_scores.get(ticker, 0.0)
-        spread = meta.get("spread_override") or spread_proxy
+        override = meta.get("spread_override")
+        spread = override if override is not None else spread_proxy
         gate_threshold = multiplier * spread + profit_floor
 
         h = holdings_map.get(ticker)

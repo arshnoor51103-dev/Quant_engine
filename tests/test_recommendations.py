@@ -372,3 +372,38 @@ def test_units_computed_from_delta_over_price():
     for c in cards:
         if c.action == "BUY" and c.units is not None and c.est_price and c.delta_dollars:
             assert c.units == pytest.approx(c.delta_dollars / c.est_price, rel=1e-6)
+
+
+# ─── spread_override (F8) ─────────────────────────────────────────────────────
+
+def test_zero_spread_override_is_honoured():
+    """F8: a deliberate spread_override of 0.0 must NOT fall back to spread_proxy."""
+    cfg = {
+        "allocation": BUCKET_CFG,
+        "trading": {
+            "spread_proxy": 0.10,  # large, so a falsy-zero fallback would blow the gate
+            "anchor_return_annualized": 0.1398,
+            "profit_floor": 0.005,
+            "trade_threshold_multiplier": 2.0,
+            "max_trades_per_year": 24,
+            "cra_warn_threshold": 20,
+            "min_holding_days": 14,
+        },
+    }
+    cards = generate_trade_cards(
+        momentum_result=_mom_result({"VFV.TO": 0.9}),
+        regime_result=_regime_result("normal"),
+        holdings=[],
+        portfolio_config=cfg,
+        universe_map={"VFV.TO": {"bucket": "growth", "spread_override": 0.0}},
+        portfolio_nav=0.0,
+        cash=1000.0,
+        annual_trade_count=0,
+        last_buy_dates={},
+        latest_prices={"VFV.TO": 100.0},
+    )
+    vfv = next(c for c in cards if c.ticker == "VFV.TO")
+    # spread=0.0 -> gate_threshold = 2*0 + 0.005 = 0.005; BUY fires, cost_estimate=0.005.
+    # With the bug (spread=spread_proxy=0.10 -> threshold 0.205) VFV would SKIP_COST.
+    assert vfv.action == "BUY"
+    assert vfv.cost_estimate == pytest.approx(0.005)
