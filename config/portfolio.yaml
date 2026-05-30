@@ -36,6 +36,7 @@ allocation:
 risk:
   max_drawdown: 0.20         # soft ceiling — alerts fire at 15%
   drawdown_alert: 0.15
+  drawdown_halt_enabled: true  # F2: at max_drawdown ceiling, suppress new BUY cards (soft-halt)
   horizon_years: 5           # midpoint of 3-7 year range
   benchmark_primary: VBAL.TO # interim
   benchmark_stretch: VFV.TO  # S&P 500 CAD

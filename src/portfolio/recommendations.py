@@ -41,6 +41,7 @@ class GateStatus(str, Enum):
     MIN_HOLD = "MIN_HOLD"             # bought too recently (< min_holding_days)
     OVERWEIGHT = "OVERWEIGHT"         # bucket above tolerance — no additional buy
     BELOW_THRESHOLD = "BELOW_THRESH"  # optimizer weight change < rebalance_threshold
+    DRAWDOWN_HALT = "DD_HALT"         # current drawdown >= ceiling — new BUYs soft-halted
 
 
 @dataclass
@@ -454,3 +455,39 @@ def generate_trade_cards(
     _order = {"SELL": 0, "BUY": 1, "WARN": 2, "HOLD": 3, "SKIP": 4}
     cards.sort(key=lambda c: (_order.get(c.action, 9), -(abs(c.delta_dollars or 0.0))))
     return cards
+
+
+def apply_drawdown_halt(
+    cards: list[TradeCard],
+    current_drawdown: float,
+    ceiling: float,
+    enabled: bool = True,
+) -> tuple[list[TradeCard], bool]:
+    """
+    Soft-halt new risk at the drawdown ceiling (F2).
+
+    When ``enabled`` and ``current_drawdown >= ceiling``, every BUY card is
+    converted to a SKIP card with gate_status DRAWDOWN_HALT. SELL / HOLD / WARN
+    cards are left untouched — risk reduction and rebalancing still flow at the
+    ceiling; only *new* risk-on is suppressed.
+
+    Args:
+        cards:            output of generate_trade_cards (mutated in place)
+        current_drawdown: positive magnitude of current portfolio drawdown (e.g. 0.22)
+        ceiling:          risk.max_drawdown from config (e.g. 0.20)
+        enabled:          risk.drawdown_halt_enabled toggle
+
+    Returns:
+        (cards, halted) — halted is True iff the ceiling was breached and
+        halting is enabled.
+    """
+    if not enabled or current_drawdown < ceiling:
+        return cards, False
+    for card in cards:
+        if card.action == "BUY":
+            card.action = "SKIP"
+            card.gate_status = GateStatus.DRAWDOWN_HALT
+            card.gate_reason = (
+                f"drawdown {current_drawdown:.1%} >= {ceiling:.0%} ceiling — BUYs halted"
+            )
+    return cards, True

@@ -20,6 +20,7 @@ import pytest
 from src.portfolio.recommendations import (
     GateStatus,
     STABLE_TICKERS,
+    TradeCard,
     compute_combined_scores,
     compute_target_weights,
     generate_trade_cards,
@@ -448,3 +449,44 @@ def test_drift_sell_sets_cost_estimate():
     drift = next((c for c in cards if c.sell_reason == "DRIFT" and c.action == "SELL"), None)
     assert drift is not None, f"expected a DRIFT SELL card; got {[(c.ticker, c.action, c.sell_reason) for c in cards]}"
     assert drift.cost_estimate == pytest.approx(2 * 0.0005)
+
+
+# ─── drawdown soft-halt (F2) ──────────────────────────────────────────────────
+
+class TestDrawdownHalt:
+    def _buy_card(self) -> TradeCard:
+        return TradeCard(ticker="VFV.TO", bucket="growth", action="BUY", units=1.0,
+                         est_price=100.0, delta_dollars=100.0, combined_signal=0.5,
+                         expected_return_pct=0.07, gate_status=GateStatus.PASS,
+                         cost_estimate=0.006)
+
+    def test_halt_converts_buy_to_skip(self):
+        from src.portfolio.recommendations import apply_drawdown_halt
+        cards, halted = apply_drawdown_halt([self._buy_card()], current_drawdown=0.22, ceiling=0.20)
+        assert halted is True
+        assert cards[0].action == "SKIP"
+        assert cards[0].gate_status == GateStatus.DRAWDOWN_HALT
+
+    def test_no_halt_below_ceiling(self):
+        from src.portfolio.recommendations import apply_drawdown_halt
+        cards, halted = apply_drawdown_halt([self._buy_card()], current_drawdown=0.10, ceiling=0.20)
+        assert halted is False
+        assert cards[0].action == "BUY"
+
+    def test_disabled_never_halts(self):
+        from src.portfolio.recommendations import apply_drawdown_halt
+        cards, halted = apply_drawdown_halt([self._buy_card()], 0.50, 0.20, enabled=False)
+        assert halted is False
+        assert cards[0].action == "BUY"
+
+    def test_sell_and_hold_untouched(self):
+        from src.portfolio.recommendations import apply_drawdown_halt
+        sell = TradeCard(ticker="X", bucket="growth", action="SELL", units=1.0, est_price=10.0,
+                         delta_dollars=-10.0, combined_signal=-0.1, expected_return_pct=0.07,
+                         gate_status=GateStatus.PASS, sell_reason="SIGNAL")
+        hold = TradeCard(ticker="Y", bucket="stable", action="HOLD", units=None, est_price=10.0,
+                         delta_dollars=0.0, combined_signal=0.1, expected_return_pct=0.0,
+                         gate_status=GateStatus.PASS)
+        cards, halted = apply_drawdown_halt([sell, hold], 0.30, 0.20)
+        assert halted is True
+        assert cards[0].action == "SELL" and cards[1].action == "HOLD"
