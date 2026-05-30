@@ -51,3 +51,60 @@ def test_recommend_halts_buys_at_drawdown_ceiling(monkeypatch, capsys):
     assert "HALT" in out, f"expected a drawdown HALT banner; output was:\n{out}"
     assert buy.action == "SKIP", "BUY card should have been soft-halted to SKIP"
     assert buy.gate_status == GateStatus.DRAWDOWN_HALT
+
+
+# ─── F1/F12: CRA cap enforcement in execute_command ───────────────────────────
+
+def _pending_buy(rid: int = 1) -> dict:
+    return {"id": rid, "status": "pending", "action": "BUY", "ticker": "VFV.TO"}
+
+
+def test_execute_blocks_at_cra_cap(monkeypatch):
+    """F12: trade #25 must be blocked before record_trade when at the CRA cap."""
+    monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 24)
+    called = {"record": False}
+    monkeypatch.setattr(p3, "record_trade",
+                        lambda **k: called.__setitem__("record", True) or 1)
+    with pytest.raises(typer.Exit):
+        p3.execute_command(rec_id=1, price=100.0, units=1.0,
+                           trade_date_str=None, force=False, justification=None)
+    assert called["record"] is False, "record_trade must NOT run when blocked"
+
+
+def test_execute_force_requires_justification(monkeypatch):
+    """--force without --justification must still be refused."""
+    monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 24)
+    with pytest.raises(typer.Exit):
+        p3.execute_command(rec_id=1, price=100.0, units=1.0,
+                           trade_date_str=None, force=True, justification=None)
+
+
+def test_execute_force_with_justification_proceeds(monkeypatch):
+    """--force --justification past the cap proceeds AND logs the override."""
+    monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 24)
+    logged = {}
+    monkeypatch.setattr(p3, "record_trade", lambda **k: 99)
+    monkeypatch.setattr(p3, "mark_recommendation_executed", lambda *a, **k: None)
+    monkeypatch.setattr(p3, "log", lambda *a, **k: logged.setdefault("msg", a))
+    p3.execute_command(rec_id=1, price=100.0, units=1.0,
+                       trade_date_str=None, force=True, justification="month-end rebalance")
+    assert logged.get("msg") is not None, "CRA override must be logged"
+
+
+def test_execute_under_cap_proceeds_without_force(monkeypatch):
+    """Below the cap, execution proceeds normally (no force needed)."""
+    monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 5)
+    recorded = {}
+    monkeypatch.setattr(p3, "record_trade", lambda **k: recorded.update(k) or 7)
+    monkeypatch.setattr(p3, "mark_recommendation_executed", lambda *a, **k: None)
+    p3.execute_command(rec_id=1, price=100.0, units=1.0,
+                       trade_date_str=None, force=False, justification=None)
+    assert recorded.get("ticker") == "VFV.TO"

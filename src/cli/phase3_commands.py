@@ -24,6 +24,7 @@ from ..data.storage import (
     get_last_alert,
     get_recommendation_by_id,
     list_pending_recommendations,
+    log,
     log_alert,
     mark_recommendation_executed,
     mark_recommendation_skipped,
@@ -519,6 +520,8 @@ def execute_command(
     price: float = typer.Option(..., "--price", help="Actual fill price per unit in CAD"),
     units: float = typer.Option(..., "--units", help="Actual units filled"),
     trade_date_str: str = typer.Option(None, "--date", help="Execution date YYYY-MM-DD (default today)"),
+    force: bool = typer.Option(False, "--force", help="Override the CRA annual trade cap (requires --justification)"),
+    justification: str = typer.Option(None, "--justification", help="Logged reason for a --force CRA override"),
 ) -> None:
     """
     Mark a pending recommendation as executed and record the trade.
@@ -556,6 +559,28 @@ def execute_command(
         console.print(f"[red]{rec['ticker']} not in universe.[/red]")
         raise typer.Exit(1)
 
+    # F1: CRA annual trade cap — hard block at the limit (logged --force override)
+    trading_cfg = load_portfolio_config()["trading"]
+    max_trades = int(trading_cfg.get("max_trades_per_year", 24))
+    annual = get_annual_trade_count()
+    if annual >= max_trades:
+        if not force:
+            console.print(
+                f"[red]CRA cap reached: {annual}/{max_trades} trades this calendar year. "
+                "Execution blocked to stay clear of day-trade reclassification.[/red]\n"
+                "[yellow]To override: re-run with --force --justification \"reason\" (logged).[/yellow]"
+            )
+            raise typer.Exit(1)
+        if not justification:
+            console.print("[red]--force requires --justification \"reason\".[/red]")
+            raise typer.Exit(1)
+        log("execute", "WARNING",
+            f"CRA cap override: executing trade #{annual + 1} (cap {max_trades}). "
+            f"Rec #{rec_id} {rec['ticker']}. Justification: {justification}")
+        console.print(
+            f"[yellow]CRA override logged — proceeding with trade #{annual + 1}.[/yellow]"
+        )
+
     trade_id = record_trade(
         ticker=rec["ticker"],
         side=rec["action"],
@@ -563,7 +588,10 @@ def execute_command(
         price=price,
         trade_date=exec_date,
         fees=0.0,
-        rationale=f"Recommendation #{rec_id}",
+        rationale=(
+            f"Recommendation #{rec_id}"
+            + (f" [CRA override: {justification}]" if (force and justification) else "")
+        ),
     )
     mark_recommendation_executed(rec_id, fill_price=price, fill_units=units)
 
