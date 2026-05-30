@@ -44,6 +44,7 @@ from ..portfolio.optimizer import BucketOptimizer
 from ..portfolio.recommendations import (
     GateStatus,
     TradeCard,
+    apply_drawdown_halt,
     compute_target_weights,
     compute_combined_scores,
     generate_trade_cards,
@@ -145,8 +146,19 @@ def _print_cards(
     saved: bool,
     max_trades: int = 24,
     n_signal_rows: int = 0,
+    halted: bool = False,
+    current_dd: float = 0.0,
+    ceiling: float = 0.20,
 ) -> None:
     total_capital = portfolio_nav + cash
+
+    if halted:
+        console.print(Panel(
+            f"[bold red]DRAWDOWN CEILING BREACHED[/bold red] — current {current_dd:.1%} "
+            f">= {ceiling:.0%}. New BUY recommendations are HALTED (soft). "
+            f"SELL / rebalance still active.",
+            border_style="red", title="[bold red]RISK HALT[/bold red]",
+        ))
 
     header_lines = [
         f"NAV: ${portfolio_nav:,.2f}  |  Deploying: ${cash:,.2f}  |  "
@@ -321,8 +333,12 @@ def _run_alert_triggers(
         nav_series = _portfolio_nav_series(holdings, price_data)
         current_dd = abs(max_drawdown(nav_series)) if not nav_series.empty else 0.0
 
+        ceiling: float = portfolio_cfg["risk"].get("max_drawdown", 0.20)
         last = get_last_alert("DRAWDOWN")
-        last_payload = json.loads(last["payload"]) if (last and last["payload"]) else {}
+        try:
+            last_payload = json.loads(last["payload"]) if (last and last["payload"]) else {}
+        except (json.JSONDecodeError, TypeError):
+            last_payload = {}
         last_status = last_payload.get("status", "RECOVERED")  # absent = never fired
 
         if current_dd > threshold and last_status == "RECOVERED":
@@ -335,6 +351,25 @@ def _run_alert_triggers(
                       json.dumps({"status": "WARNING", "drawdown": round(current_dd, 4)}))
         elif current_dd <= threshold and last_status == "WARNING":
             log_alert("DRAWDOWN",
+                      json.dumps({"status": "RECOVERED", "drawdown": round(current_dd, 4)}))
+
+        # F2: distinct ceiling alert when drawdown reaches the soft-halt threshold
+        last_c = get_last_alert("DRAWDOWN_CEILING")
+        try:
+            last_c_payload = json.loads(last_c["payload"]) if (last_c and last_c["payload"]) else {}
+        except (json.JSONDecodeError, TypeError):
+            last_c_payload = {}
+        last_c_status = last_c_payload.get("status", "RECOVERED")
+        if current_dd >= ceiling and last_c_status == "RECOVERED":
+            send_alert(
+                topic, "DRAWDOWN CEILING",
+                f"Drawdown {current_dd:.1%} >= {ceiling:.0%} ceiling — new BUYs halted",
+                priority=5, tags=["rotating_light", "no_entry"],
+            )
+            log_alert("DRAWDOWN_CEILING",
+                      json.dumps({"status": "WARNING", "drawdown": round(current_dd, 4)}))
+        elif current_dd < ceiling and last_c_status == "WARNING":
+            log_alert("DRAWDOWN_CEILING",
                       json.dumps({"status": "RECOVERED", "drawdown": round(current_dd, 4)}))
 
 
@@ -430,6 +465,14 @@ def recommend_command(
         optimized_weights=optimized_weights,
     )
 
+    # F2: drawdown soft-halt — suppress new BUYs at/above the ceiling
+    risk_cfg = portfolio_cfg.get("risk", {})
+    ceiling = float(risk_cfg.get("max_drawdown", 0.20))
+    halt_enabled = bool(risk_cfg.get("drawdown_halt_enabled", True))
+    nav_series = _portfolio_nav_series(holdings, price_data)
+    current_dd = abs(max_drawdown(nav_series)) if not nav_series.empty else 0.0
+    cards, halted = apply_drawdown_halt(cards, current_dd, ceiling, halt_enabled)
+
     n_signal_rows = 0
     if save:
         run_id = str(uuid.uuid4())[:8]
@@ -462,6 +505,9 @@ def recommend_command(
         saved=save,
         max_trades=max_trades,
         n_signal_rows=n_signal_rows,
+        halted=halted,
+        current_dd=current_dd,
+        ceiling=ceiling,
     )
 
     if notify:
