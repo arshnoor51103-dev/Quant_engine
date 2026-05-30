@@ -38,3 +38,6 @@ secrets.yaml
 
 # Skill installer ZIPs (binary archives — installed to ~/.claude/skills/)
 *.skill
+
+# Claude Code hook per-session state
+.claude/hooks/.state/

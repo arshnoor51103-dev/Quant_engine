@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/block_protected_writes.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/run_tests_on_src_change.py", "timeout": 120, "statusMessage": "Running tests on src/tests change..." },
+          { "type": "command", "command": "python .claude/hooks/test_change_nudge.py", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}
