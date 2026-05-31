@@ -476,7 +476,7 @@ def recommend_command(
                 ticker=card.ticker,
                 action=card.action,
                 bucket=card.bucket,
-                target_weight=0.0,
+                target_weight=(optimized_weights or equal_weights).get(card.ticker, 0.0),
                 combined_signal=card.combined_signal,
                 expected_ret=card.expected_return_pct,
                 cost_estimate=card.cost_estimate,
