@@ -2,7 +2,12 @@
 Scheduled daily run orchestrator.
 
 Runs the full pipeline in order:
-    fetch → momentum signals → vol_regime signals → recommend (with optimizer and alerts)
+    fetch → recommend (with optimizer and alerts)
+
+``recommend --save`` re-persists the momentum + vol_regime signal scores under
+its own single run_id before writing trade cards, so standalone ``signals
+--save`` steps would only fragment a date's signal_scores across multiple
+run_ids (F11). They are intentionally omitted.
 
 All steps are executed regardless of prior failures so partial data is never the
 cause of a missing recommendation.  Failed steps are reported in the footer and
@@ -32,8 +37,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # default_cash so they are built inside run().
 _STEPS: list[tuple[str, list[str]]] = [
     ("fetch",      ["fetch"]),
-    ("momentum",   ["signals", "--signal-type", "momentum", "--save"]),
-    ("vol_regime", ["signals", "--signal-type", "vol_regime", "--save"]),
     ("recommend",  ["recommend", "--optimize", "--save", "--notify"]),
 ]
 
