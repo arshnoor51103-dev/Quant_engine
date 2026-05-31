@@ -490,3 +490,26 @@ class TestDrawdownHalt:
         cards, halted = apply_drawdown_halt([sell, hold], 0.30, 0.20)
         assert halted is True
         assert cards[0].action == "SELL" and cards[1].action == "HOLD"
+
+
+# ─── STABLE_TICKERS single source of truth (F14) ──────────────────────────────
+
+def test_stable_tickers_derived_from_universe():
+    """F14: STABLE_TICKERS equals universe.yaml bucket=='stable' — one source."""
+    from src.portfolio.model import load_universe_map
+    from src.signals.vol_regime import STABLE_TICKERS
+    expected = frozenset(
+        t for t, m in load_universe_map().items() if m.get("bucket") == "stable"
+    )
+    assert frozenset(STABLE_TICKERS) == expected
+
+
+def test_derive_stable_tickers_reflects_rebucketing(monkeypatch):
+    """F14: the derive helper reads universe membership, not a hardcoded list."""
+    import src.signals.vol_regime as vr
+    monkeypatch.setattr(vr, "load_universe_map", lambda: {
+        "A.TO": {"bucket": "stable"},
+        "B.TO": {"bucket": "growth"},
+        "C.TO": {"bucket": "stable"},
+    })
+    assert vr._derive_stable_tickers() == frozenset({"A.TO", "C.TO"})
