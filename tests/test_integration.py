@@ -268,3 +268,51 @@ class TestRecommendLayer:
                 last_buy_dates=last_buy_dates,
                 latest_prices=latest_prices,
             )
+
+
+# ─── DB-backed end-to-end round-trip (F13) ───────────────────────────────────
+
+class TestEndToEndDB:
+    """Exercise the real storage layer end-to-end on a temp SQLite file.
+
+    The in-memory TestRecommendLayer above validates the pure-function pipeline;
+    this validates that persistence (recommendations + trades + holdings) is
+    wired correctly through the actual DB schema, not just in memory (F13).
+    """
+
+    def test_recommend_persist_execute_roundtrip(self, tmp_path) -> None:
+        from src.data.storage import (
+            get_annual_trade_count,
+            get_recommendation_by_id,
+            initialize,
+            mark_recommendation_executed,
+            record_trade,
+            save_recommendation,
+            upsert_prices,
+        )
+
+        db = tmp_path / "e2e.db"
+        initialize(db)
+        # Seed one real price row so the ticker exists in the DB.
+        upsert_prices(
+            [{"ticker": "VFV.TO", "trade_date": "2026-05-20",
+              "open": 100, "high": 101, "low": 99, "close": 100,
+              "adj_close": 100, "volume": 1000}],
+            db_path=db,
+        )
+        # Persist a recommendation, then execute it as a real trade.
+        rec_id = save_recommendation(
+            ticker="VFV.TO", action="BUY", bucket="growth", target_weight=0.6,
+            combined_signal=0.5, expected_ret=0.07, cost_estimate=0.006,
+            gate_status="PASS", rationale="e2e", run_id="e2e0001", db_path=db,
+        )
+        record_trade("VFV.TO", "BUY", units=5.0, price=100.0,
+                     trade_date=date(2026, 5, 20), db_path=db)
+        mark_recommendation_executed(rec_id, fill_price=100.0, fill_units=5.0, db_path=db)
+
+        assert get_annual_trade_count(2026, db_path=db) == 1
+        rec = get_recommendation_by_id(rec_id, db_path=db)
+        assert rec is not None
+        assert rec["status"] == "executed"
+        assert rec["target_weight"] == pytest.approx(0.6)
+        assert rec["fill_units"] == pytest.approx(5.0)
