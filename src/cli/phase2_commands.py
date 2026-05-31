@@ -50,7 +50,7 @@ def signals_command(
     signal_map = _make_signal_map()
     if signal_type not in signal_map:
         console.print(f"[red]Unknown signal: {signal_type}. Options: {list(signal_map.keys())}[/red]")
-        return
+        raise typer.Exit(1)
 
     sig = signal_map[signal_type]
 
@@ -62,11 +62,21 @@ def signals_command(
         if not ps.empty:
             prices[t] = ps
 
+    if not prices:
+        console.print(
+            f"[red]No price data available for any ticker (lookback {lookback}d). "
+            "Run `quant fetch` first.[/red]"
+        )
+        raise typer.Exit(1)
+
     result = sig.generate(prices)
 
     if save:
         run_id = str(uuid.uuid4())[:8]
         n = persist_signals([result], run_id=run_id)
+        if n == 0:
+            console.print("[red]Signal produced 0 persistable rows — aborting.[/red]")
+            raise typer.Exit(1)
         console.print(f"[dim]Saved {n} signal rows (run_id: {run_id})[/dim]")
 
     # Display
