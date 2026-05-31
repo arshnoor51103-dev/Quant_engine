@@ -343,34 +343,19 @@ def _run_alert_triggers(
         last_status = last_payload.get("status", "RECOVERED")  # absent = never fired
 
         if current_dd > threshold and last_status == "RECOVERED":
+            ceiling_note = (
+                f"  CEILING {ceiling:.0%} BREACHED — new BUYs halted."
+                if current_dd >= ceiling else ""
+            )
             send_alert(
                 topic, "Drawdown Warning",
-                f"Portfolio drawdown {current_dd:.1%} — alert threshold {threshold:.0%}",
+                f"Portfolio drawdown {current_dd:.1%} — alert threshold {threshold:.0%}.{ceiling_note}",
                 priority=5, tags=["rotating_light"],
             )
             log_alert("DRAWDOWN",
                       json.dumps({"status": "WARNING", "drawdown": round(current_dd, 4)}))
         elif current_dd <= threshold and last_status == "WARNING":
             log_alert("DRAWDOWN",
-                      json.dumps({"status": "RECOVERED", "drawdown": round(current_dd, 4)}))
-
-        # F2: distinct ceiling alert when drawdown reaches the soft-halt threshold
-        last_c = get_last_alert("DRAWDOWN_CEILING")
-        try:
-            last_c_payload = json.loads(last_c["payload"]) if (last_c and last_c["payload"]) else {}
-        except (json.JSONDecodeError, TypeError):
-            last_c_payload = {}
-        last_c_status = last_c_payload.get("status", "RECOVERED")
-        if current_dd >= ceiling and last_c_status == "RECOVERED":
-            send_alert(
-                topic, "DRAWDOWN CEILING",
-                f"Drawdown {current_dd:.1%} >= {ceiling:.0%} ceiling — new BUYs halted",
-                priority=5, tags=["rotating_light", "no_entry"],
-            )
-            log_alert("DRAWDOWN_CEILING",
-                      json.dumps({"status": "WARNING", "drawdown": round(current_dd, 4)}))
-        elif current_dd < ceiling and last_c_status == "WARNING":
-            log_alert("DRAWDOWN_CEILING",
                       json.dumps({"status": "RECOVERED", "drawdown": round(current_dd, 4)}))
 
 
