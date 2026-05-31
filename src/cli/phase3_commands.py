@@ -620,7 +620,7 @@ def pending_command() -> None:
     table.add_column("Generated At", style="dim")
 
     for r in rows:
-        exp = f"{r['expected_ret']*100:+.2f}%" if r.get("expected_ret") else "—"
+        exp = f"{r['expected_ret']*100:+.2f}%" if r.get("expected_ret") is not None else "—"
         sell_reason = r.get("sell_reason") or "—"
         action = r["action"]
         action_style = "red" if action == "SELL" else ("green" if action == "BUY" else "")
