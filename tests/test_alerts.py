@@ -233,6 +233,26 @@ def test_drawdown_warning_first_run_fires_when_exceeds_threshold() -> None:
     assert abs(logged["drawdown"] - 0.17) < 0.01
 
 
+# ─── Malformed payload resilience (F9) ───────────────────────────────────────
+
+# Test F9a
+def test_regime_change_survives_malformed_payload() -> None:
+    """A corrupt REGIME_CHANGE payload row must not crash the trigger (F9).
+
+    json.loads on '{not json' would raise JSONDecodeError. The guard falls
+    last_regime back to None, so the alert still fires for the current regime.
+    """
+    bad_row = {"payload": "{not json"}
+    with patch("src.cli.phase3_commands.send_alert") as mock_send, \
+         patch("src.cli.phase3_commands.get_last_alert", return_value=bad_row), \
+         patch("src.cli.phase3_commands.log_alert") as mock_log:
+        _run_alert_triggers([], "HIGH_VOL", _cfg(triggers=["REGIME_CHANGE"]), [], {})
+    mock_send.assert_called_once()  # did not raise; fired with previous unknown
+    logged = json.loads(mock_log.call_args[0][1])
+    assert logged["regime"] == "HIGH_VOL"
+    assert logged["previous"] is None
+
+
 # ─── DRAWDOWN ceiling note (F2) ──────────────────────────────────────────────
 
 # Test 15

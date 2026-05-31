@@ -315,7 +315,13 @@ def _run_alert_triggers(
     # REGIME_CHANGE — fire when vol regime shifts from last persisted value
     if "REGIME_CHANGE" in triggers:
         last = get_last_alert("REGIME_CHANGE")
-        last_regime = json.loads(last["payload"]).get("regime") if last else None
+        try:
+            last_regime = (
+                json.loads(last["payload"]).get("regime")
+                if (last and last["payload"]) else None
+            )
+        except (json.JSONDecodeError, TypeError):
+            last_regime = None
         if last_regime != regime_name:
             send_alert(
                 topic, "Regime Change",
