@@ -286,3 +286,41 @@ def test_get_last_alert_does_not_cross_alert_types(tmp_db: Path) -> None:
     import json
     log_alert("REGIME_CHANGE", json.dumps({"regime": "NORMAL"}), db_path=tmp_db)
     assert get_last_alert("DRAWDOWN", db_path=tmp_db) is None
+
+
+# ─── ticker_metadata contract (F6, F10, F20) ──────────────────────────────────
+
+from src.signals.base import SignalResult  # noqa: E402
+
+
+class TestTickerMetadataContract:
+    def _result(self, meta: dict) -> SignalResult:
+        return SignalResult("mean_reversion_20_60", date(2026, 5, 20),
+                            {"VFV.TO": 0.5}, metadata=meta)
+
+    def test_structural_dict_is_preserved_not_dropped(self) -> None:
+        # F6: regime_weights is structural (keys w_ts/w_cs, not tickers) -> must survive
+        r = self._result({"regime_weights": {"w_ts": 0.5, "w_cs": 0.5},
+                          "z_ts_raw": {"VFV.TO": -1.2}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert meta["regime_weights"] == {"w_ts": 0.5, "w_cs": 0.5}  # preserved
+        assert meta["z_ts"] == -1.2                                   # F10: renamed
+
+    def test_rsi_values_renamed(self) -> None:
+        r = SignalResult("rsi_14_gate_50", date(2026, 5, 20), {"VFV.TO": 1.0},
+                         metadata={"rsi_values": {"VFV.TO": 61.0}, "threshold": 50.0})
+        meta = r.ticker_metadata("VFV.TO")
+        assert meta["rsi_value"] == 61.0   # F10
+        assert meta["threshold"] == 50.0   # broadcast scalar
+
+    def test_list_metadata_not_broadcast(self) -> None:
+        # F20: skipped_tickers (list) must not land in every per-ticker row
+        r = self._result({"skipped_tickers": ["AAA", "BBB"], "raw_returns": {"VFV.TO": 0.1}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert "skipped_tickers" not in meta
+        assert meta["raw_return"] == 0.1
+
+    def test_absent_ticker_omits_per_ticker_key(self) -> None:
+        r = self._result({"raw_returns": {"OTHER.TO": 0.9}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert "raw_return" not in meta

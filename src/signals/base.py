@@ -22,11 +22,18 @@ from datetime import date
 import pandas as pd
 
 
-# Rename map for per-ticker dict keys in SignalResult.ticker_metadata().
-# Add entries here when new signals introduce per-ticker dicts with plural keys.
+# Metadata keys whose VALUE is a per-ticker dict ({ticker: x}). Register new
+# per-ticker keys here so ticker_metadata() extracts them rather than broadcasting.
+_PER_TICKER_KEYS: frozenset[str] = frozenset({
+    "raw_returns", "z_scores", "z_ts_raw", "rsi_values",
+})
+
+# Rename per-ticker keys to their singular form on extraction.
 _PER_TICKER_KEY_MAP: dict[str, str] = {
     "raw_returns": "raw_return",
     "z_scores": "z_score",
+    "z_ts_raw": "z_ts",
+    "rsi_values": "rsi_value",
 }
 
 
@@ -47,12 +54,13 @@ class SignalResult:
         Extract a ticker-specific metadata slice from this result's metadata blob.
 
         Two-tier extraction contract — binding on all Signal implementations:
-        - Per-ticker dict: any key whose value is a dict is treated as a
-          ticker-keyed mapping. Extracts value[ticker] and renames the key
-          via _PER_TICKER_KEY_MAP (e.g. "raw_returns" -> "raw_return").
-          If ticker is absent from the dict, the key is omitted entirely.
-        - Broadcast scalar: any key whose value is not a dict is passed
-          through verbatim to every ticker.
+        - Per-ticker keys (registered in _PER_TICKER_KEYS): value is a
+          {ticker: x} dict; extract value[ticker], renamed via
+          _PER_TICKER_KEY_MAP. Omitted if ticker is absent.
+        - List values (e.g. skipped_tickers): dropped from per-ticker rows —
+          run-level data does not belong on every row (F20).
+        - Everything else (scalars AND structural dicts like regime_weights):
+          broadcast verbatim — preserved, not dropped (F6).
 
         Args:
             ticker: Yahoo Finance ticker symbol (e.g. 'VFV.TO')
@@ -64,11 +72,15 @@ class SignalResult:
             return {}
         out: dict = {}
         for key, value in self.metadata.items():
-            if isinstance(value, dict):
-                if ticker in value:
-                    out_key = _PER_TICKER_KEY_MAP.get(key, key)
-                    out[out_key] = value[ticker]
+            if key in _PER_TICKER_KEYS:
+                # Per-ticker dict: extract this ticker's value, renamed (omit if absent).
+                if isinstance(value, dict) and ticker in value:
+                    out[_PER_TICKER_KEY_MAP.get(key, key)] = value[ticker]
+            elif isinstance(value, list):
+                # F20: run-level lists (e.g. skipped_tickers) don't belong on every row.
+                continue
             else:
+                # Scalar OR structural dict (e.g. regime_weights): broadcast verbatim.
                 out[key] = value
         return out
 
