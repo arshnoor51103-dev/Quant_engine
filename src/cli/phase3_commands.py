@@ -34,6 +34,7 @@ from ..data.storage import (
     persist_signals,
     record_trade,
     save_recommendation,
+    supersede_pending_recommendations,
 )
 from ..portfolio.metrics import max_drawdown
 from ..portfolio.model import (
@@ -515,6 +516,14 @@ def recommend_command(
                 sell_reason=card.sell_reason,
             )
             card.rec_id = rec_id
+        # This run is the current full-universe snapshot — retire the previous
+        # run's still-pending cards so `quant pending` shows one trustworthy,
+        # non-duplicated actionable set (audit 2026-05-31).
+        n_superseded = supersede_pending_recommendations(keep_run_id=run_id)
+        if n_superseded:
+            console.print(
+                f"[dim]Superseded {n_superseded} stale pending rec(s) from prior runs.[/dim]"
+            )
 
     max_trades = int(portfolio_cfg["trading"].get("max_trades_per_year", 24))
     _print_cards(

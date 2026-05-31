@@ -30,7 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # Windows cp1252 can't encode U+2500 box-drawing chars used in print separators
 sys.stdout.reconfigure(encoding="utf-8")
 
-from src.data.storage import get_connection, DB_PATH
+from src.data.storage import get_connection
+
+# Research backtests read the REAL historical DB, independent of the test-suite
+# $QUANT_DB isolation (conftest.py). This is read-only replication against live
+# price history, not a unit test, so it must not see the empty throwaway DB.
+DB_PATH = Path(__file__).resolve().parents[1] / "data" / "quant.db"
 
 # ── Universe ──────────────────────────────────────────────────────────────────
 
@@ -57,7 +62,7 @@ EMA_MONTHLY_PERIOD = 12   # Comparison gate: price > EMA(12 months)
 def _load_daily_prices() -> dict[str, pd.Series]:
     if not DB_PATH.exists():
         return {}
-    conn = get_connection()
+    conn = get_connection(DB_PATH)
     result: dict[str, pd.Series] = {}
     for ticker in ALL_TICKERS:
         rows = conn.execute(

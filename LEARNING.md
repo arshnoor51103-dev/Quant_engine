@@ -587,3 +587,20 @@ Deferred as documented/theoretical: F5 (`scripts/daily_run.py` bypasses `_force_
 - The audit's highest-yield finding wasn't a bug — it was that **write paths had never been executed** because the DB path was unmockable. Hardcoded resources don't just hurt testing; they guarantee the untested path ships. Make the resource injectable (`$QUANT_DB`) and the smoke gate writes itself.
 - "Narrow `except`, body raises a wider type" is a *pattern*, not a one-off. After finding it once (latin-1), grep every `except (...)` and ask "what else can the body throw?" — F1 was the same bug in two more real-money commands.
 - Two sequential writes that must agree belong in one transaction. "It'll basically never fail between them" is how a double-booked real trade happens.
+
+---
+
+**Mistake & Correction — 2026-05-31 (DB discrepancy fix + a test that corrupted the live DB)**
+
+Full DB audit of `data/quant.db` came back structurally clean (schema migrated, holdings/trades reconcile, prices fresh, 0 NaN, 0 run_log errors) with **one real discrepancy**: 63 `pending` recommendations accumulated across 7 `recommend --save` runs with **no supersession**, so `quant pending` showed up to **7 duplicate BUY cards per ticker** (43 "actionable") plus a zombie BUY ZAG.TO from before ZAG was dropped from the universe. Executing two cards for one ticker = an accidental double-buy.
+
+**Fix (snapshot model):** new `supersede_pending_recommendations(keep_run_id)` (no schema migration — `status` has no CHECK constraint; added a `superseded` status that drops out of the pending view but stays in the append-only log). `recommend --save` calls it after persisting so the newest run is the only pending one. One-time cleanup left 9 pending (latest run) + 54 superseded.
+
+**The bite — a unit test corrupted the live database.** Wiring supersession into `recommend_command` meant the *pre-existing* `test_recommend_save_persists_real_target_weight` (which calls `recommend_command(save=True)` and mocked `save_recommendation` but, of course, not the brand-new supersede call) ran the **real** `supersede_pending_recommendations` against the **default DB_PATH = the live `data/quant.db`** during the suite — silently flipping all 63 pending recs to superseded. Caught only because the follow-up cleanup query found 0 pending where 63 were expected.
+
+**Root-cause fix:** added `conftest.py` that sets `$QUANT_DB` to a throwaway temp DB **before any test imports storage**, so the module-level `DB_PATH` binds to the throwaway and **no test can ever touch the live DB by default**. This is the systemic form of F7. One read-only research test (`test_H005_rsi_backtest`) legitimately needs live price history, so it now pins the real repo `data/quant.db` path explicitly (read-only). 274/274 passing; verified the suite leaves the live DB byte-unchanged.
+
+**Lessons:**
+- Adding a DB **write** to a code path silently widens the blast radius of every existing test that exercises it. A test that was "safe" because the old writes were mocked becomes a live-DB mutator the moment you add an unmocked one.
+- Test isolation must be enforced at the *infrastructure* layer (a conftest that redirects the default DB), not per-test discipline. Per-test mocking is opt-in and therefore eventually forgotten — as it was here.
+- The blast radius was invisible until a state-counting query disagreed with expectation. When a number "should be 63" and is 0, stop and find out *who wrote it* before doing anything else.

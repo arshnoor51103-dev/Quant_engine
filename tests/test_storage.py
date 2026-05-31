@@ -408,6 +408,52 @@ def test_record_trade_external_conn_commits_on_caller_exit(tmp_db: Path) -> None
     ).fetchone()[0] == 2.0
 
 
+def _save_rec(run_id: str, db: Path, ticker: str = "VFV.TO") -> int:
+    return save_recommendation(
+        ticker=ticker, action="BUY", bucket="growth",
+        target_weight=0.20, combined_signal=0.45, expected_ret=0.063,
+        cost_estimate=0.006, gate_status="PASS", rationale=None,
+        run_id=run_id, db_path=db,
+    )
+
+
+def test_supersede_pending_keeps_only_target_run(tmp_db: Path) -> None:
+    """supersede_pending_recommendations marks every pending rec NOT from
+    keep_run_id as 'superseded', leaving that run's recs the only pending ones."""
+    from src.data.storage import (
+        supersede_pending_recommendations, list_pending_recommendations,
+    )
+    _save_rec("runA", tmp_db)
+    _save_rec("runA", tmp_db, ticker="XIC.TO")
+    new_id = _save_rec("runB", tmp_db)
+
+    n = supersede_pending_recommendations(keep_run_id="runB", db_path=tmp_db)
+
+    assert n == 2
+    pending_ids = {r["id"] for r in list_pending_recommendations(db_path=tmp_db)}
+    assert pending_ids == {new_id}
+
+
+def test_supersede_pending_ignores_executed_and_skipped(tmp_db: Path) -> None:
+    """Only 'pending' rows are superseded — executed/skipped are untouched."""
+    from src.data.storage import supersede_pending_recommendations
+    keep = _save_rec("runB", tmp_db)
+    executed = _save_rec("runA", tmp_db)
+    skipped = _save_rec("runA", tmp_db)
+    mark_recommendation_executed(executed, fill_price=100.0, fill_units=1.0, db_path=tmp_db)
+    mark_recommendation_skipped(skipped, db_path=tmp_db)
+
+    n = supersede_pending_recommendations(keep_run_id="runB", db_path=tmp_db)
+
+    assert n == 0  # nothing else was pending
+    import sqlite3 as _sq
+    conn = _sq.connect(tmp_db); conn.row_factory = _sq.Row
+    rows = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM recommendations")}
+    assert rows[keep] == "pending"
+    assert rows[executed] == "executed"
+    assert rows[skipped] == "skipped"
+
+
 def test_mark_executed_external_conn_rolls_back_on_failure(tmp_db: Path) -> None:
     """mark_recommendation_executed(conn=...) defers commit to the caller, so a
     later failure leaves the recommendation still pending."""

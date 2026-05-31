@@ -485,6 +485,38 @@ def mark_recommendation_skipped(rec_id: int, db_path: Path = DB_PATH) -> None:
         conn.commit()
 
 
+def supersede_pending_recommendations(
+    keep_run_id: str, db_path: Path = DB_PATH, conn: sqlite3.Connection | None = None
+) -> int:
+    """Mark every *pending* recommendation NOT from ``keep_run_id`` as 'superseded'.
+
+    A ``recommend --save`` run is a full-universe snapshot, so the previous
+    snapshot's still-pending cards are obsolete the moment a newer run lands.
+    Leaving them pending lets stale / duplicate BUY cards (and zombie recs for
+    tickers later dropped from the universe) appear as actionable, inviting a
+    double-execution. Superseded recs drop out of ``list_pending_recommendations``
+    while staying in the append-only log for audit. Rows with a NULL run_id are
+    also superseded (they predate run_id tracking and cannot be the current run).
+
+    Args:
+        keep_run_id: the run_id whose pending recs remain pending.
+        conn: optional open connection (caller owns the commit); else private.
+
+    Returns:
+        number of recommendations transitioned to 'superseded'.
+    """
+    sql = (
+        "UPDATE recommendations SET status = 'superseded' "
+        "WHERE status = 'pending' AND (run_id IS NULL OR run_id != ?);"
+    )
+    if conn is not None:
+        return conn.execute(sql, (keep_run_id,)).rowcount
+    with get_connection(db_path) as conn:
+        n = conn.execute(sql, (keep_run_id,)).rowcount
+        conn.commit()
+    return n
+
+
 def get_recommendation_by_id(rec_id: int, db_path: Path = DB_PATH) -> dict | None:
     """Return a single recommendation row as a dict, or None if not found."""
     with get_connection(db_path) as conn:

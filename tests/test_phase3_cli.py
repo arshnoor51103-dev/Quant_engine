@@ -198,3 +198,58 @@ def test_trade_command_clean_error_on_db_failure(monkeypatch):
         m.trade("VFV.TO", "BUY", 1.0, 10.0,
                 trade_date=None, fees=0.0, rationale=None)
     assert ei.value.exit_code == 1
+
+
+# ─── Pending-rec supersession: each --save snapshot replaces the prior one ────
+
+def _recommend_save_setup(monkeypatch):
+    """Common monkeypatches so recommend_command reaches its save block with one
+    PASS BUY card, touching no DB."""
+    monkeypatch.setattr(p3, "get_holdings",
+                        lambda: [Holding("VFV.TO", 10.0, 100.0, "growth", 100.0)])
+    monkeypatch.setattr(p3, "nav", lambda h: 1000.0)
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "price_series",
+                        lambda t, lookback_days=0: pd.Series(
+                            [100.0, 101.0, 102.0],
+                            index=pd.date_range("2025-01-01", periods=3)))
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 0)
+    monkeypatch.setattr(p3, "get_all_last_buy_dates", lambda: {})
+    monkeypatch.setattr(p3, "_portfolio_nav_series",
+                        lambda h, pdata: pd.Series([100.0, 100.0, 100.0]))
+    monkeypatch.setattr(p3, "compute_target_weights", lambda *a, **k: {"VFV.TO": 0.6})
+    buy = TradeCard(ticker="VFV.TO", bucket="growth", action="BUY", units=1.0,
+                    est_price=100.0, delta_dollars=100.0, combined_signal=0.5,
+                    expected_return_pct=0.07, gate_status=GateStatus.PASS,
+                    cost_estimate=0.006)
+    monkeypatch.setattr(p3, "generate_trade_cards", lambda **k: [buy])
+    monkeypatch.setattr(p3, "save_recommendation", lambda **k: 1)
+
+
+def test_recommend_save_supersedes_prior_pending(monkeypatch):
+    """recommend --save supersedes prior pending recs, scoped to THIS run's id."""
+    _recommend_save_setup(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(p3, "persist_signals",
+                        lambda *a, **k: captured.__setitem__("run_id", k.get("run_id")) or 0)
+    sup = {}
+    monkeypatch.setattr(p3, "supersede_pending_recommendations",
+                        lambda **k: sup.update(k) or 0, raising=False)
+
+    p3.recommend_command(cash=0.0, save=True, optimize=False, notify=False)
+
+    assert sup.get("keep_run_id") == captured.get("run_id"), \
+        "must supersede prior pending recs keeping only this run"
+
+
+def test_recommend_no_supersede_without_save(monkeypatch):
+    """Without --save, nothing is persisted and nothing is superseded."""
+    _recommend_save_setup(monkeypatch)
+    monkeypatch.setattr(p3, "persist_signals", lambda *a, **k: 0)
+    called = {"v": False}
+    monkeypatch.setattr(p3, "supersede_pending_recommendations",
+                        lambda **k: called.__setitem__("v", True), raising=False)
+
+    p3.recommend_command(cash=0.0, save=False, optimize=False, notify=False)
+
+    assert called["v"] is False
