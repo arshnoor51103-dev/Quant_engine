@@ -544,3 +544,25 @@ audit path.
   if nullable columns are added to `signal_scores` in future.
 
 **Lesson:** Silent neutral fallback (`score=0.0`) on insufficient data is correct behavior for signal integrity, but callers must actively use `sig.lookback_days` to size the fetch window. Never hardcode a lookback constant that could silently undercut a signal's required history.
+
+---
+
+**Mistake & Correction — 2026-05-31**
+
+**Bug cluster: `recommend --notify` died silently, and so did the alert about it (3 root causes + 1 systemic)**
+
+A `recommend --notify` smoke run failed with `OperationalError: no such table: alerts_log`, and the daily-run alert meant to report that failure *also* failed with `'latin-1' codec can't encode character '—'`. Net effect on a real-money system: the daily pipeline broke and the operator was never notified — a doubly-silent failure.
+
+**Root causes (all distinct):**
+1. **Stale live DB (Bug A).** `data/quant.db` predated the `alerts_log` + `schema_version` DDL; `quant init` had not been re-run. Schema in code was correct — the live DB was simply un-synced. Fix: ran idempotent `quant init` (additive `CREATE TABLE IF NOT EXISTS` + `run_migrations()`); 63 recs preserved, tables added, `schema_version=[1,2]`.
+2. **Unguarded alert side-effect (Bug C).** `_run_alert_triggers` was called from `recommend_command` with no guard, and `log_alert`/`get_last_alert` do DB I/O that can raise — so an alerting failure crashed the *primary* recommendation pipeline. This violated the ntfy.py contract ("the recommendation pipeline must not fail because an alert failed") and the function's own false "never raises" docstring. Fix: split into a guarded wrapper `_run_alert_triggers` (logs + console-warns on any failure, never raises) over an inner `_evaluate_alert_triggers`.
+3. **Non-latin-1 HTTP header (Bug B).** `send_alert` puts the title in the `X-Title` header; `requests` encodes header values as latin-1. The daily-run error title `Quant Engine — {step} FAILED` carries an em-dash (U+2014) at position 13. `UnicodeEncodeError` is a `ValueError`, *not* caught by `except (RequestException, OSError)`. Fix: `_latin1_header()` maps common Unicode punctuation (—, –, →, …, curly quotes) to ASCII and `encode("latin-1", "replace")`s the rest, applied to `X-Title` and `X-Tags`. Body is unaffected (sent as UTF-8 bytes).
+4. **Systemic Windows-console crash (Bug D), discovered while applying the fix.** `quant init` crashed on its own `✓` success message: `'charmap' codec can't encode '✓'`. Python <3.15 on Windows defaults console output to cp1252, so *every* CLI command printing a non-cp1252 glyph (`✓ — → █ ─`) crashes when run directly in a terminal (it survived the smoke harness only because subprocess PIPEs default to UTF-8). Fix: `_force_utf8_output()` reconfigures stdout/stderr to UTF-8 at CLI entry in `main.py`.
+
+**Tests:** `tests/test_alerts.py` (+3: em-dash title, non-latin-1 tag, ASCII unchanged; +1: `_run_alert_triggers` never raises on DB error — reproduces the exact `no such table: alerts_log` crash and proves it is now swallowed). `tests/test_cli_encoding.py` (+3: cp1252 baseline, reconfigure makes glyphs safe, no-op on non-reconfigurable streams). 261/261 passing.
+
+**Lessons:**
+- A "fire-and-forget" side effect is only fire-and-forget if it is *wrapped*. A docstring promising "never raises" is a comment, not a guarantee — the guarantee must be a `try/except` at the call boundary. Log loudly (no silent failures), drop, continue.
+- HTTP header values are latin-1, not UTF-8. Rich body text ≠ header text. Sanitize at the transport boundary so no caller can ever crash a header.
+- Green tests against temp DBs do not prove the *live* DB is in sync. Schema drift between `SCHEMA`-in-code and `data/quant.db` is invisible until a command touches the missing table. (See `docs/runbooks/TIER1_OPERATIONALIZATION.md` Step 1.)
+- On Windows + Python <3.15, force UTF-8 stdout at entry or every glyph is a latent crash. Subprocess capture hides it; the operator's terminal will not.

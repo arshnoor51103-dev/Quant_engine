@@ -279,3 +279,51 @@ def test_drawdown_alert_no_ceiling_note_below_ceiling(mock_nav, mock_last, mock_
     _run_alert_triggers([], "NORMAL", _cfg(triggers=["DRAWDOWN_WARNING"]), [], {})
     mock_send.assert_called_once()
     assert "CEILING" not in mock_send.call_args[0][2]
+
+
+# ─── Header encoding: non-latin-1 titles/tags must not crash the POST ─────────
+# HTTP header values are latin-1 (requests). A non-latin-1 char in X-Title /
+# X-Tags raises UnicodeEncodeError inside requests before the POST is sent.
+# The daily-run error title `Quant Engine — {step} FAILED` carries an em-dash.
+
+def test_send_alert_title_with_em_dash_is_latin1_safe() -> None:
+    """An em-dash in the title must be encoded latin-1-safe, not crash the POST."""
+    with patch("src.alerts.ntfy.requests.post") as mock_post:
+        send_alert("t", "Quant Engine — recommend FAILED", "body")
+        title = mock_post.call_args[1]["headers"]["X-Title"]
+        # requests transmits header values as latin-1 — this must not raise.
+        title.encode("latin-1")
+        assert title == "Quant Engine - recommend FAILED"
+
+
+def test_send_alert_non_latin1_tag_is_latin1_safe() -> None:
+    """A non-latin-1 char in a tag must be encoded latin-1-safe, not crash."""
+    with patch("src.alerts.ntfy.requests.post") as mock_post:
+        send_alert("t", "T", "M", tags=["warning", "regime→shift"])
+        mock_post.call_args[1]["headers"]["X-Tags"].encode("latin-1")  # no raise
+
+
+def test_send_alert_ascii_title_unchanged() -> None:
+    """Plain ASCII titles must pass through byte-for-byte (no mangling)."""
+    with patch("src.alerts.ntfy.requests.post") as mock_post:
+        send_alert("t", "New Recommendation", "M")
+        assert mock_post.call_args[1]["headers"]["X-Title"] == "New Recommendation"
+
+
+# ─── Pipeline guard: alert failures must never abort recommend ────────────────
+# ntfy.py contract: "The recommendation pipeline must not fail because an alert
+# failed." A DB error (e.g. missing alerts_log table) in log_alert must be
+# logged and dropped, not propagated.
+
+def test_run_alert_triggers_never_raises_on_db_error() -> None:
+    """A DB OperationalError in log_alert must be swallowed, not crash recommend."""
+    import sqlite3
+    with patch("src.cli.phase3_commands.console") as mock_console, \
+         patch("src.cli.phase3_commands.send_alert"), \
+         patch("src.cli.phase3_commands.log_alert",
+               side_effect=sqlite3.OperationalError("no such table: alerts_log")):
+        # Must not raise.
+        _run_alert_triggers([_buy_card()], "NORMAL",
+                            _cfg(triggers=["NEW_RECOMMENDATION"]), [], {})
+        # Failure must be surfaced, not silent (CLAUDE.md: no silent failures).
+        assert mock_console.print.called

@@ -12,6 +12,41 @@ import requests
 _BASE_URL = "https://ntfy.sh"
 _TIMEOUT = 5  # seconds
 
+# HTTP header values must be latin-1 (RFC 7230; enforced by requests). ntfy
+# carries the title in X-Title and tags in X-Tags, so any non-latin-1 char in
+# a title/tag (em-dash, arrow, curly quotes, …) raises UnicodeEncodeError
+# inside requests *before* the POST. Map common Unicode punctuation to readable
+# ASCII; anything else outside latin-1 is replaced so a header can never crash
+# an alert. The message body is unaffected — it is sent as UTF-8 bytes.
+_HEADER_UNICODE_MAP = {
+    "—": "-",    # — em dash
+    "–": "-",    # – en dash
+    "→": "->",   # → right arrow
+    "…": "...",  # … ellipsis
+    "‘": "'",    # ' left single quote
+    "’": "'",    # ' right single quote
+    "“": '"',    # " left double quote
+    "”": '"',    # " right double quote
+}
+
+
+def _latin1_header(value: str) -> str:
+    """Return ``value`` made safe for a latin-1 HTTP header.
+
+    Common Unicode punctuation is mapped to readable ASCII; any remaining
+    character outside latin-1 is replaced with ``?`` so the value always
+    encodes and ``requests`` never raises ``UnicodeEncodeError``.
+
+    Args:
+        value: Raw header text (title or comma-joined tags).
+
+    Returns:
+        A latin-1-encodable string.
+    """
+    for unicode_char, ascii_repl in _HEADER_UNICODE_MAP.items():
+        value = value.replace(unicode_char, ascii_repl)
+    return value.encode("latin-1", "replace").decode("latin-1")
+
 
 def send_alert(
     topic: str,
@@ -34,11 +69,11 @@ def send_alert(
     The recommendation pipeline must not fail because an alert failed.
     """
     headers: dict[str, str] = {
-        "X-Title": title,
+        "X-Title": _latin1_header(title),
         "X-Priority": str(priority),
     }
     if tags:
-        headers["X-Tags"] = ",".join(tags)
+        headers["X-Tags"] = _latin1_header(",".join(tags))
 
     try:
         requests.post(

@@ -6,6 +6,7 @@ Commands: `quant recommend`, `quant execute`, `quant pending`
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections import Counter
 from datetime import date
@@ -281,10 +282,36 @@ def _run_alert_triggers(
     price_data: dict[str, pd.Series],
 ) -> None:
     """
+    Run the alert triggers as a fire-and-forget side effect.
+
+    Alerting must never abort the recommendation pipeline (ntfy.py contract:
+    "The recommendation pipeline must not fail because an alert failed.").
+    Any failure — HTTP, header encoding, or a missing/locked DB table such as
+    alerts_log — is logged at WARNING and surfaced to the console, then
+    dropped. This function never raises.
+    """
+    try:
+        _evaluate_alert_triggers(
+            cards, regime_name, portfolio_cfg, holdings, price_data
+        )
+    except Exception as exc:  # noqa: BLE001 — alerts are non-critical by contract
+        logging.warning("alert triggers failed — %s", exc, exc_info=True)
+        console.print(f"[yellow]Alerts skipped (non-fatal): {exc}[/yellow]")
+
+
+def _evaluate_alert_triggers(
+    cards: list[TradeCard],
+    regime_name: str,
+    portfolio_cfg: dict,
+    holdings: list,
+    price_data: dict[str, pd.Series],
+) -> None:
+    """
     Evaluate the three alert triggers and POST to ntfy.sh where warranted.
 
-    Called from recommend_command when --notify is set. All HTTP failures
-    are swallowed inside send_alert — this function never raises.
+    Called via _run_alert_triggers, which owns the never-raise guarantee.
+    May raise on DB errors (e.g. a missing alerts_log table); the wrapper
+    logs and drops them so the recommendation pipeline is unaffected.
     """
     alerts_cfg = portfolio_cfg.get("alerts", {})
     if not alerts_cfg.get("enabled"):
