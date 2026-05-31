@@ -6,6 +6,12 @@
         "hooks": [
           { "type": "command", "command": "python .claude/hooks/block_protected_writes.py" }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/block_llm_in_signal_path.py" }
+        ]
       }
     ],
     "PostToolUse": [
