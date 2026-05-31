@@ -324,3 +324,38 @@ class TestTickerMetadataContract:
         r = self._result({"raw_returns": {"OTHER.TO": 0.9}})
         meta = r.ticker_metadata("VFV.TO")
         assert "raw_return" not in meta
+
+
+# ─── schema_version migration runner (F15) ───────────────────────────────────
+
+class TestSchemaVersion:
+    def test_initialize_records_schema_versions(self, tmp_path: Path) -> None:
+        from src.data.storage import get_connection
+        db = tmp_path / "v.db"
+        initialize(db)
+        with get_connection(db) as conn:
+            versions = {r["version"] for r in conn.execute("SELECT version FROM schema_version;")}
+        assert {1, 2} <= versions
+
+    def test_initialize_is_idempotent(self, tmp_path: Path) -> None:
+        from src.data.storage import get_connection
+        db = tmp_path / "v2.db"
+        initialize(db)
+        initialize(db)  # must not raise or double-apply
+        with get_connection(db) as conn:
+            n = conn.execute("SELECT COUNT(*) AS c FROM schema_version;").fetchone()["c"]
+        assert n == 2
+
+    def test_migrate_shim_still_callable(self, tmp_path: Path) -> None:
+        """Back-compat: the old migrate_recommendations_v2 entrypoint still works."""
+        db = tmp_path / "v3.db"
+        initialize(db)
+        migrate_recommendations_v2(db_path=db)  # no-op, must not raise
+        rec_id = save_recommendation(
+            ticker="VFV.TO", action="BUY", bucket="growth",
+            target_weight=0.20, combined_signal=0.45,
+            expected_ret=0.063, cost_estimate=0.006,
+            gate_status="PASS", rationale=None, run_id="shim01",
+            db_path=db,
+        )
+        assert isinstance(rec_id, int) and rec_id > 0

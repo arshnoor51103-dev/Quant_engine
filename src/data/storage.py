@@ -16,7 +16,7 @@ import json
 import sqlite3
 from datetime import datetime, date
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 if TYPE_CHECKING:
     from ..signals.base import SignalResult
@@ -118,6 +118,11 @@ CREATE TABLE IF NOT EXISTS alerts_log (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_log_type
     ON alerts_log(alert_type, fired_at DESC);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER PRIMARY KEY,
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -129,17 +134,13 @@ def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-_migrated: set[Path] = set()
-
-
 def initialize(db_path: Path = DB_PATH) -> None:
     """Create the schema if not present. Safe to call repeatedly."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
         conn.commit()
-    migrate_recommendations_v2(db_path)
-    migrate_recommendations_v3(db_path)
+    run_migrations(db_path)
 
 
 def upsert_prices(rows: Iterable[dict], db_path: Path = DB_PATH) -> int:
@@ -282,18 +283,17 @@ def log(component: str, level: str, message: str, db_path: Path = DB_PATH) -> No
         conn.commit()
 
 
-def migrate_recommendations_v2(db_path: Path = DB_PATH) -> None:
-    """
-    Add Phase 3 P0 columns to recommendations table if not already present.
+def _migration_1_p0_columns(conn: sqlite3.Connection) -> None:
+    """P0 recommendation columns (fill_price...run_id). Column-existence guarded.
 
-    Safe to call on every startup — checks column existence before altering.
-    New columns: fill_price, fill_units, executed_at, bucket, gate_status,
-                 combined_signal, run_id.
+    Historic schemas predating these columns get them added; fresh DBs created
+    from SCHEMA already have them, so this is a no-op there.
     """
-    global _migrated
-    if db_path in _migrated:
-        return
-    new_cols = [
+    existing = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
+    }
+    for col_name, col_type in [
         ("fill_price",      "REAL"),
         ("fill_units",      "REAL"),
         ("executed_at",     "TIMESTAMP"),
@@ -301,36 +301,67 @@ def migrate_recommendations_v2(db_path: Path = DB_PATH) -> None:
         ("gate_status",     "TEXT"),
         ("combined_signal", "REAL"),
         ("run_id",          "TEXT"),
-    ]
+    ]:
+        if col_name not in existing:
+            conn.execute(
+                f"ALTER TABLE recommendations ADD COLUMN {col_name} {col_type};"
+            )
+
+
+def _migration_2_sell_reason(conn: sqlite3.Connection) -> None:
+    """sell_reason column (NULL non-SELL; 'SIGNAL'/'DRIFT' for SELLs). Guarded."""
+    existing = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
+    }
+    if "sell_reason" not in existing:
+        conn.execute("ALTER TABLE recommendations ADD COLUMN sell_reason TEXT;")
+
+
+# Registered migrations: (version, fn). Versions are sequential and never reused.
+# To add schema change N: append (N, _migration_N_...) — run_migrations applies
+# each exactly once, tracked in the schema_version table.
+_MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
+    (1, _migration_1_p0_columns),
+    (2, _migration_2_sell_reason),
+]
+
+
+def run_migrations(db_path: Path = DB_PATH) -> None:
+    """
+    Apply every registered migration once, tracked in the schema_version table.
+
+    Replaces the ad-hoc migrate_recommendations_v2/v3 + module-global guard
+    pattern (F15). Idempotent: a version already present in schema_version is
+    skipped, so repeated calls and repeated process starts are safe.
+    """
     with get_connection(db_path) as conn:
-        existing = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version "
+            "(version INTEGER PRIMARY KEY, "
+            "applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);"
+        )
+        applied = {
+            row["version"]
+            for row in conn.execute("SELECT version FROM schema_version;").fetchall()
         }
-        for col_name, col_type in new_cols:
-            if col_name not in existing:
+        for version, fn in _MIGRATIONS:
+            if version not in applied:
+                fn(conn)
                 conn.execute(
-                    f"ALTER TABLE recommendations ADD COLUMN {col_name} {col_type};"
+                    "INSERT INTO schema_version (version) VALUES (?);", (version,)
                 )
         conn.commit()
-    _migrated.add(db_path)
+
+
+def migrate_recommendations_v2(db_path: Path = DB_PATH) -> None:
+    """Back-compat shim — superseded by run_migrations (F15). Delegates fully."""
+    run_migrations(db_path)
 
 
 def migrate_recommendations_v3(db_path: Path = DB_PATH) -> None:
-    """
-    Add sell_reason column to recommendations table if not already present.
-
-    Safe to call on every startup. New column: sell_reason (TEXT, NULL for
-    non-SELL cards, 'SIGNAL' or 'DRIFT' for SELL cards).
-    """
-    with get_connection(db_path) as conn:
-        existing = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(recommendations);").fetchall()
-        }
-        if "sell_reason" not in existing:
-            conn.execute("ALTER TABLE recommendations ADD COLUMN sell_reason TEXT;")
-        conn.commit()
+    """Back-compat shim — superseded by run_migrations (F15). Delegates fully."""
+    run_migrations(db_path)
 
 
 def save_recommendation(
