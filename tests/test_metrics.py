@@ -63,6 +63,16 @@ def test_max_drawdown_from_returns():
     assert dd_from_rets == pytest.approx(-0.2, abs=1e-6)
 
 
+def test_max_drawdown_empty_returns_nan():
+    """F22: empty series → NaN (no data ≠ no drawdown). Documented contract."""
+    assert np.isnan(m.max_drawdown(pd.Series(dtype=float)))
+
+
+def test_max_drawdown_normal_is_negative():
+    """F22: a real peak-to-trough series produces a negative drawdown."""
+    assert m.max_drawdown(pd.Series([100.0, 120.0, 90.0])) < 0
+
+
 def test_sortino_higher_than_sharpe_when_skewed_positive():
     """When downside is small, Sortino > Sharpe."""
     rng = np.random.default_rng(7)

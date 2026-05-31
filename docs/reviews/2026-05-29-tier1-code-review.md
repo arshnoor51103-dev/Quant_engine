@@ -103,3 +103,36 @@ What in the current code will likely break when the universe expands past 9 ETFs
 ---
 
 *Read-only review. No source, test, or config files were modified. Triage these findings to scope the v1.2.0 cleanup; do not begin cleanup from this document alone.*
+
+---
+
+## Closeout — v1.2.0 Guardrails (2026-05-30, append-only)
+
+> Resolution record for the cleanup executed on branch `fix/v1.2.0-guardrails` per `docs/superpowers/plans/2026-05-30-v1.2.0-guardrails.md`. **The findings table above is NOT modified** (append-only convention). All 22 findings resolved; F18 moot. Test suite 204 → 238, all green. Tag: `v1.2.0-guardrails`.
+
+| # | Sev | Resolution | Commit |
+|---|-----|------------|--------|
+| F1 | MAJOR | `execute_command` hard-blocks at `≥ max_trades_per_year`; `--force --justification` logged override; warn-at-20 kept. Negative test (#25 blocked) added. | `65e8126` |
+| F2 | MAJOR | Soft-halt: pure fn `apply_drawdown_halt` + `GateStatus.DRAWDOWN_HALT` + config `risk.drawdown_halt_enabled`; wired into `recommend_command` (RISK HALT banner); ceiling note folded into the drawdown ntfy alert. | `5a76de7`, `fc9ccaf`, `9f81678` |
+| F3 | MAJOR | `ingest_universe` retries with exponential backoff; `quant fetch` exits non-zero past `data.fetch_max_failures`. New `tests/test_ingest.py`. | `abd05be` |
+| F4 | MAJOR | `signals` exits non-zero on unknown type / empty data / 0-row save. New `tests/test_phase2_cli.py`. | `2f22435` |
+| F5 | MAJOR | Exemption **ratified** (drift-SELL is risk-control, stays off the profit-floor gate, keeps $50 floor) + now populates `cost_estimate = 2×spread`; documented in CLAUDE.md Hard Constraint 3. | `bc0e4ab` (code), `4ff80c9` (docs) |
+| F6 | MAJOR | `ticker_metadata` rewritten as allow-list (`_PER_TICKER_KEYS`); structural dicts (e.g. `regime_weights`) preserved, not dropped. | `706f7a8` |
+| F7 | MINOR | CLAUDE.md claim corrected: `capital_tier` is declared-but-inert; Tier 1 enforced by `universe.yaml` lock + `execute_command` check; tier-switching is a Tier 2 deliverable (not built). `region:` noted as descriptive. **Doc-only** per locked decision (tier machinery not built now). | `4ff80c9` |
+| F8 | MINOR | `spread_override` uses explicit `is None` check — a deliberate `0.0` override is honoured. | `0622a0f` |
+| F9 | MINOR | All `json.loads` in alert triggers guarded (REGIME_CHANGE this session; DRAWDOWN guarded during F2). phase2 `signal_history` loads were **already guarded** — verified, no change. Malformed-row test added. | `ebca279` |
+| F10 | MINOR | `z_ts_raw → z_ts`, `rsi_values → rsi_value` rename map honoured in the F6 allow-list. | `706f7a8` |
+| F11 | MINOR | Daily run drops the two redundant `signals --save` steps; `recommend --save` re-persists momentum + vol_regime under one `run_id`. Pipeline now `fetch → recommend`. | `6364cdd` |
+| F12 | MINOR | Negative test `test_execute_blocks_at_cra_cap` (trade #25 blocked before `record_trade`) shipped with F1. | `65e8126` |
+| F13 | MINOR | DB-backed E2E `TestEndToEndDB.test_recommend_persist_execute_roundtrip` (temp DB: upsert_prices → save_recommendation → record_trade → mark_executed → assert). In-memory pipeline test kept. PROJECT_STATUS claim corrected. | `e7c1b0b` |
+| F14 | MINOR | `STABLE_TICKERS` derived from `universe.yaml` via `_derive_stable_tickers()` — one bucket-truth source, hardcoded frozenset removed. | `88eb354` |
+| F15 | MINOR | `schema_version`-tracked `run_migrations()` runner replaces `migrate_recommendations_v2/v3` + `_migrated` global; v2/v3 kept as back-compat shims. | `185a4bf` |
+| F16 | NIT | Dead `cost_threshold` variable deleted. | `0622a0f` |
+| F17 | NIT | `save_recommendation` persists real `target_weight` = `(optimized_weights or equal_weights).get(ticker, 0.0)` instead of hardcoded 0.0. | `69390c7` |
+| F18 | NIT | **MOOT** — the review referenced `DailyRunner.__init__(db_path=...)`; current code has no such param (only `log_target, default_cash, step_timeout_seconds`). Stale reference, no code change. | — |
+| F19 | NIT | `pending_command` uses `is not None` so a real `0.0` expected-return renders correctly. | `c0aa5da` |
+| F20 | NIT | List-typed metadata (e.g. `skipped_tickers`) dropped from per-row persistence in the F6 allow-list. | `706f7a8` |
+| F21 | NIT | Stale worktree deregistered (`git worktree remove`) and its fully-merged branch `worktree-phase-3-p35-ntfy-alerts` deleted; duplicate source tree contents removed (no longer pollutes greps). The now-empty `.claude/worktrees/` dir was held by a Windows process lock at cleanup time — untracked, contents gone, clears on session restart. No commit (untracked path). | — |
+| F22 | MINOR | `max_drawdown` NaN-on-empty contract documented on the function + 2 guard tests; the alert/halt paths already rely on NaN-compares-False. | `c0aa5da` |
+
+*Closeout appended by the v1.2.0 execution session. Append-only — see LEARNING.md (2026-05-30 Decision) for the rationale narrative.*

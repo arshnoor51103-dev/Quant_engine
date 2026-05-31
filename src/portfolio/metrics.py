@@ -102,6 +102,11 @@ def max_drawdown(prices_or_returns: pd.Series, is_returns: bool = False) -> floa
 
     Returns a negative number (e.g. -0.20 = 20% drawdown).
 
+    Returns float("nan") for an empty series (no data ≠ no drawdown). This
+    NaN-on-degenerate-input contract is shared by all metrics in this module;
+    callers comparing against a threshold must guard for NaN (NaN compares
+    False), as the drawdown-alert and drawdown-halt paths do.
+
     Args:
         prices_or_returns: price series, or returns series if is_returns=True
         is_returns: if True, treats input as returns and compounds to equity curve

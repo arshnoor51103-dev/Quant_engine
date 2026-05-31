@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from .base import Signal, SignalResult
+from ..portfolio.model import load_universe_map
 
 
 class Regime(str, Enum):
@@ -45,7 +46,17 @@ REGIME_SCORES = {
     Regime.CRISIS: -1.0,
 }
 
-STABLE_TICKERS: frozenset[str] = frozenset({"VAB.TO", "HSAV.TO"})
+def _derive_stable_tickers() -> frozenset[str]:
+    """Single source of truth for the stable bucket: universe.yaml bucket=='stable' (F14)."""
+    return frozenset(
+        t for t, m in load_universe_map().items() if m.get("bucket") == "stable"
+    )
+
+
+# Derived once at import (load_universe_map is lru_cached) so it can never drift
+# from universe.yaml. Re-bucketing a ticker there is reflected automatically —
+# no second hardcoded list to keep in sync.
+STABLE_TICKERS: frozenset[str] = _derive_stable_tickers()
 
 
 class VolRegimeSignal(Signal):

@@ -19,6 +19,27 @@ When Arsh learns a concept (factor models, regime detection, etc.), he appends a
 
 > Architectural and design choices with rationale. The "why" behind the code.
 
+### 2026-05-30 — v1.2.0 Guardrails: 22-finding Tier 1 code-review cleanup before any Tier 2 work
+
+**Context**: A Tier 1 code review (`docs/reviews/2026-05-29-tier1-code-review.md`) surfaced 22 findings spanning real-money safety, signal-contract correctness, persistence robustness, and stale docs. Closed on branch `fix/v1.2.0-guardrails`, TDD, one atomic commit per finding. Operator decisions locked before execution (no relitigation mid-flight).
+
+**Real-money safety (operator-locked):**
+- **F1 (CRA 24-cap)** — `execute_command` now hard-blocks at `≥ max_trades_per_year`; `--force --justification "..."` is the only override, and it is logged to `run_log`. Warn-at-20 unchanged. The cap is a legal boundary (day-trade reclassification risk on a TFSA), not a soft preference.
+- **F2 (drawdown ceiling)** — soft-halt: at `current_dd ≥ risk.max_drawdown` (0.20) new BUY cards are suppressed (→ SKIP / `DRAWDOWN_HALT`); SELL/HOLD/WARN still flow (risk reduction must never be blocked). Pure fn `apply_drawdown_halt`, config toggle `risk.drawdown_halt_enabled`, RISK HALT banner, and a distinct ceiling note folded into the drawdown ntfy alert.
+- **F3/F4 (fail-loud)** — `fetch` retries with backoff and exits non-zero past `data.fetch_max_failures`; `signals` exits non-zero on unknown type / empty data / 0-row save. Silent partial-data runs were the worst latent failure mode.
+- **F5 (drift-SELL exemption)** — *ratified, not changed*: a rebalancing trim stays exempt from the profit-floor gate (it is risk-control, not alpha) but now populates `cost_estimate = 2 × spread` for audit, and the exemption is documented in CLAUDE.md Hard Constraint 3 so code and policy agree.
+
+**Contract / persistence consolidation:**
+- **F6/F10/F20/F14** — `SignalResult.ticker_metadata` is now an allow-list (`_PER_TICKER_KEYS` + rename map): structural dicts like `regime_weights` are preserved, per-ticker keys renamed to singular (`z_ts`, `rsi_value`), run-level lists dropped from per-row persistence. `STABLE_TICKERS` is derived from `universe.yaml` (`_derive_stable_tickers`) — one bucket-truth source, no second hardcoded list to drift.
+- **F15** — replaced `migrate_recommendations_v2/v3` + a module-global `_migrated` guard with a `schema_version`-tracked `run_migrations()` runner. Each migration applies exactly once; v2/v3 kept as back-compat shims. This is the pattern any future schema change must use.
+- **F11** — daily run dropped the redundant standalone `signals --save` steps; `recommend --save` already re-persists momentum + vol_regime under one `run_id`, so a date's signal_scores no longer fragment across run_ids.
+
+**F7 (doc honesty)** — corrected the CLAUDE.md "all modules read capital_tier / scale automatically" claim: `capital_tier` is declared-but-inert today; the Tier 1 universe lock is what's actually enforced (universe.yaml membership + `execute_command` check); runtime tier-switching is a Tier 2 deliverable, deliberately **not** built now.
+
+**Outcome**: 204 → 234 tests, all green. Tag `v1.2.0-guardrails`. F18 was moot (review referenced a `db_path` param `DailyRunner.__init__` never had). This was the cost of velocity in Phase 3 — the guardrails were specified in CLAUDE.md but the enforcement and the docs had drifted from each other; v1.2.0 reconciles them before capital scales.
+
+---
+
 ### 2026-05-28 — Tier 1 Complete: system declared production-ready, v1.0.0-tier1 tagged
 
 **Context**: All seven originally planned Tier 1 subsystems shipped. The engine has been running for ~9 days (first commit 2026-05-19). Every subsystem has targeted test coverage and has been validated against real data.

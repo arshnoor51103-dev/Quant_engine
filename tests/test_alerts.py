@@ -231,3 +231,51 @@ def test_drawdown_warning_first_run_fires_when_exceeds_threshold() -> None:
     logged = json.loads(mock_log.call_args[0][1])
     assert logged["status"] == "WARNING"
     assert abs(logged["drawdown"] - 0.17) < 0.01
+
+
+# ─── Malformed payload resilience (F9) ───────────────────────────────────────
+
+# Test F9a
+def test_regime_change_survives_malformed_payload() -> None:
+    """A corrupt REGIME_CHANGE payload row must not crash the trigger (F9).
+
+    json.loads on '{not json' would raise JSONDecodeError. The guard falls
+    last_regime back to None, so the alert still fires for the current regime.
+    """
+    bad_row = {"payload": "{not json"}
+    with patch("src.cli.phase3_commands.send_alert") as mock_send, \
+         patch("src.cli.phase3_commands.get_last_alert", return_value=bad_row), \
+         patch("src.cli.phase3_commands.log_alert") as mock_log:
+        _run_alert_triggers([], "HIGH_VOL", _cfg(triggers=["REGIME_CHANGE"]), [], {})
+    mock_send.assert_called_once()  # did not raise; fired with previous unknown
+    logged = json.loads(mock_log.call_args[0][1])
+    assert logged["regime"] == "HIGH_VOL"
+    assert logged["previous"] is None
+
+
+# ─── DRAWDOWN ceiling note (F2) ──────────────────────────────────────────────
+
+# Test 15
+@patch("src.cli.phase3_commands.send_alert")
+@patch("src.cli.phase3_commands.log_alert")
+@patch("src.cli.phase3_commands.get_last_alert", return_value=None)
+@patch("src.cli.phase3_commands._portfolio_nav_series",
+       return_value=_nav_series_with_dd(0.22))
+def test_drawdown_alert_notes_ceiling_breach(mock_nav, mock_last, mock_log, mock_send) -> None:
+    """At/above the 20% ceiling, the drawdown alert body flags the breach + halt (F2)."""
+    _run_alert_triggers([], "NORMAL", _cfg(triggers=["DRAWDOWN_WARNING"]), [], {})
+    mock_send.assert_called_once()
+    assert "CEILING" in mock_send.call_args[0][2]
+
+
+# Test 16
+@patch("src.cli.phase3_commands.send_alert")
+@patch("src.cli.phase3_commands.log_alert")
+@patch("src.cli.phase3_commands.get_last_alert", return_value=None)
+@patch("src.cli.phase3_commands._portfolio_nav_series",
+       return_value=_nav_series_with_dd(0.17))
+def test_drawdown_alert_no_ceiling_note_below_ceiling(mock_nav, mock_last, mock_log, mock_send) -> None:
+    """Between alert threshold (15%) and ceiling (20%), no ceiling note appears (F2)."""
+    _run_alert_triggers([], "NORMAL", _cfg(triggers=["DRAWDOWN_WARNING"]), [], {})
+    mock_send.assert_called_once()
+    assert "CEILING" not in mock_send.call_args[0][2]

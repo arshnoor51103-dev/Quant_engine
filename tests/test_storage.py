@@ -286,3 +286,76 @@ def test_get_last_alert_does_not_cross_alert_types(tmp_db: Path) -> None:
     import json
     log_alert("REGIME_CHANGE", json.dumps({"regime": "NORMAL"}), db_path=tmp_db)
     assert get_last_alert("DRAWDOWN", db_path=tmp_db) is None
+
+
+# ─── ticker_metadata contract (F6, F10, F20) ──────────────────────────────────
+
+from src.signals.base import SignalResult  # noqa: E402
+
+
+class TestTickerMetadataContract:
+    def _result(self, meta: dict) -> SignalResult:
+        return SignalResult("mean_reversion_20_60", date(2026, 5, 20),
+                            {"VFV.TO": 0.5}, metadata=meta)
+
+    def test_structural_dict_is_preserved_not_dropped(self) -> None:
+        # F6: regime_weights is structural (keys w_ts/w_cs, not tickers) -> must survive
+        r = self._result({"regime_weights": {"w_ts": 0.5, "w_cs": 0.5},
+                          "z_ts_raw": {"VFV.TO": -1.2}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert meta["regime_weights"] == {"w_ts": 0.5, "w_cs": 0.5}  # preserved
+        assert meta["z_ts"] == -1.2                                   # F10: renamed
+
+    def test_rsi_values_renamed(self) -> None:
+        r = SignalResult("rsi_14_gate_50", date(2026, 5, 20), {"VFV.TO": 1.0},
+                         metadata={"rsi_values": {"VFV.TO": 61.0}, "threshold": 50.0})
+        meta = r.ticker_metadata("VFV.TO")
+        assert meta["rsi_value"] == 61.0   # F10
+        assert meta["threshold"] == 50.0   # broadcast scalar
+
+    def test_list_metadata_not_broadcast(self) -> None:
+        # F20: skipped_tickers (list) must not land in every per-ticker row
+        r = self._result({"skipped_tickers": ["AAA", "BBB"], "raw_returns": {"VFV.TO": 0.1}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert "skipped_tickers" not in meta
+        assert meta["raw_return"] == 0.1
+
+    def test_absent_ticker_omits_per_ticker_key(self) -> None:
+        r = self._result({"raw_returns": {"OTHER.TO": 0.9}})
+        meta = r.ticker_metadata("VFV.TO")
+        assert "raw_return" not in meta
+
+
+# ─── schema_version migration runner (F15) ───────────────────────────────────
+
+class TestSchemaVersion:
+    def test_initialize_records_schema_versions(self, tmp_path: Path) -> None:
+        from src.data.storage import get_connection
+        db = tmp_path / "v.db"
+        initialize(db)
+        with get_connection(db) as conn:
+            versions = {r["version"] for r in conn.execute("SELECT version FROM schema_version;")}
+        assert {1, 2} <= versions
+
+    def test_initialize_is_idempotent(self, tmp_path: Path) -> None:
+        from src.data.storage import get_connection
+        db = tmp_path / "v2.db"
+        initialize(db)
+        initialize(db)  # must not raise or double-apply
+        with get_connection(db) as conn:
+            n = conn.execute("SELECT COUNT(*) AS c FROM schema_version;").fetchone()["c"]
+        assert n == 2
+
+    def test_migrate_shim_still_callable(self, tmp_path: Path) -> None:
+        """Back-compat: the old migrate_recommendations_v2 entrypoint still works."""
+        db = tmp_path / "v3.db"
+        initialize(db)
+        migrate_recommendations_v2(db_path=db)  # no-op, must not raise
+        rec_id = save_recommendation(
+            ticker="VFV.TO", action="BUY", bucket="growth",
+            target_weight=0.20, combined_signal=0.45,
+            expected_ret=0.063, cost_estimate=0.006,
+            gate_status="PASS", rationale=None, run_id="shim01",
+            db_path=db,
+        )
+        assert isinstance(rec_id, int) and rec_id > 0

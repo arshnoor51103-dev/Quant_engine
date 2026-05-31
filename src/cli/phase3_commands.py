@@ -24,6 +24,7 @@ from ..data.storage import (
     get_last_alert,
     get_recommendation_by_id,
     list_pending_recommendations,
+    log,
     log_alert,
     mark_recommendation_executed,
     mark_recommendation_skipped,
@@ -44,6 +45,7 @@ from ..portfolio.optimizer import BucketOptimizer
 from ..portfolio.recommendations import (
     GateStatus,
     TradeCard,
+    apply_drawdown_halt,
     compute_target_weights,
     compute_combined_scores,
     generate_trade_cards,
@@ -145,8 +147,19 @@ def _print_cards(
     saved: bool,
     max_trades: int = 24,
     n_signal_rows: int = 0,
+    halted: bool = False,
+    current_dd: float = 0.0,
+    ceiling: float = 0.20,
 ) -> None:
     total_capital = portfolio_nav + cash
+
+    if halted:
+        console.print(Panel(
+            f"[bold red]DRAWDOWN CEILING BREACHED[/bold red] — current {current_dd:.1%} "
+            f">= {ceiling:.0%}. New BUY recommendations are HALTED (soft). "
+            f"SELL / rebalance still active.",
+            border_style="red", title="[bold red]RISK HALT[/bold red]",
+        ))
 
     header_lines = [
         f"NAV: ${portfolio_nav:,.2f}  |  Deploying: ${cash:,.2f}  |  "
@@ -302,7 +315,13 @@ def _run_alert_triggers(
     # REGIME_CHANGE — fire when vol regime shifts from last persisted value
     if "REGIME_CHANGE" in triggers:
         last = get_last_alert("REGIME_CHANGE")
-        last_regime = json.loads(last["payload"]).get("regime") if last else None
+        try:
+            last_regime = (
+                json.loads(last["payload"]).get("regime")
+                if (last and last["payload"]) else None
+            )
+        except (json.JSONDecodeError, TypeError):
+            last_regime = None
         if last_regime != regime_name:
             send_alert(
                 topic, "Regime Change",
@@ -321,14 +340,22 @@ def _run_alert_triggers(
         nav_series = _portfolio_nav_series(holdings, price_data)
         current_dd = abs(max_drawdown(nav_series)) if not nav_series.empty else 0.0
 
+        ceiling: float = portfolio_cfg["risk"].get("max_drawdown", 0.20)
         last = get_last_alert("DRAWDOWN")
-        last_payload = json.loads(last["payload"]) if (last and last["payload"]) else {}
+        try:
+            last_payload = json.loads(last["payload"]) if (last and last["payload"]) else {}
+        except (json.JSONDecodeError, TypeError):
+            last_payload = {}
         last_status = last_payload.get("status", "RECOVERED")  # absent = never fired
 
         if current_dd > threshold and last_status == "RECOVERED":
+            ceiling_note = (
+                f"  CEILING {ceiling:.0%} BREACHED — new BUYs halted."
+                if current_dd >= ceiling else ""
+            )
             send_alert(
                 topic, "Drawdown Warning",
-                f"Portfolio drawdown {current_dd:.1%} — alert threshold {threshold:.0%}",
+                f"Portfolio drawdown {current_dd:.1%} — alert threshold {threshold:.0%}.{ceiling_note}",
                 priority=5, tags=["rotating_light"],
             )
             log_alert("DRAWDOWN",
@@ -430,6 +457,14 @@ def recommend_command(
         optimized_weights=optimized_weights,
     )
 
+    # F2: drawdown soft-halt — suppress new BUYs at/above the ceiling
+    risk_cfg = portfolio_cfg.get("risk", {})
+    ceiling = float(risk_cfg.get("max_drawdown", 0.20))
+    halt_enabled = bool(risk_cfg.get("drawdown_halt_enabled", True))
+    nav_series = _portfolio_nav_series(holdings, price_data)
+    current_dd = abs(max_drawdown(nav_series)) if not nav_series.empty else 0.0
+    cards, halted = apply_drawdown_halt(cards, current_dd, ceiling, halt_enabled)
+
     n_signal_rows = 0
     if save:
         run_id = str(uuid.uuid4())[:8]
@@ -441,7 +476,7 @@ def recommend_command(
                 ticker=card.ticker,
                 action=card.action,
                 bucket=card.bucket,
-                target_weight=0.0,
+                target_weight=(optimized_weights or equal_weights).get(card.ticker, 0.0),
                 combined_signal=card.combined_signal,
                 expected_ret=card.expected_return_pct,
                 cost_estimate=card.cost_estimate,
@@ -462,6 +497,9 @@ def recommend_command(
         saved=save,
         max_trades=max_trades,
         n_signal_rows=n_signal_rows,
+        halted=halted,
+        current_dd=current_dd,
+        ceiling=ceiling,
     )
 
     if notify:
@@ -473,6 +511,8 @@ def execute_command(
     price: float = typer.Option(..., "--price", help="Actual fill price per unit in CAD"),
     units: float = typer.Option(..., "--units", help="Actual units filled"),
     trade_date_str: str = typer.Option(None, "--date", help="Execution date YYYY-MM-DD (default today)"),
+    force: bool = typer.Option(False, "--force", help="Override the CRA annual trade cap (requires --justification)"),
+    justification: str = typer.Option(None, "--justification", help="Logged reason for a --force CRA override"),
 ) -> None:
     """
     Mark a pending recommendation as executed and record the trade.
@@ -510,6 +550,28 @@ def execute_command(
         console.print(f"[red]{rec['ticker']} not in universe.[/red]")
         raise typer.Exit(1)
 
+    # F1: CRA annual trade cap — hard block at the limit (logged --force override)
+    trading_cfg = load_portfolio_config()["trading"]
+    max_trades = int(trading_cfg.get("max_trades_per_year", 24))
+    annual = get_annual_trade_count()
+    if annual >= max_trades:
+        if not force:
+            console.print(
+                f"[red]CRA cap reached: {annual}/{max_trades} trades this calendar year. "
+                "Execution blocked to stay clear of day-trade reclassification.[/red]\n"
+                "[yellow]To override: re-run with --force --justification \"reason\" (logged).[/yellow]"
+            )
+            raise typer.Exit(1)
+        if not justification:
+            console.print("[red]--force requires --justification \"reason\".[/red]")
+            raise typer.Exit(1)
+        log("execute", "WARNING",
+            f"CRA cap override: executing trade #{annual + 1} (cap {max_trades}). "
+            f"Rec #{rec_id} {rec['ticker']}. Justification: {justification}")
+        console.print(
+            f"[yellow]CRA override logged — proceeding with trade #{annual + 1}.[/yellow]"
+        )
+
     trade_id = record_trade(
         ticker=rec["ticker"],
         side=rec["action"],
@@ -517,7 +579,10 @@ def execute_command(
         price=price,
         trade_date=exec_date,
         fees=0.0,
-        rationale=f"Recommendation #{rec_id}",
+        rationale=(
+            f"Recommendation #{rec_id}"
+            + (f" [CRA override: {justification}]" if (force and justification) else "")
+        ),
     )
     mark_recommendation_executed(rec_id, fill_price=price, fill_units=units)
 
@@ -555,7 +620,7 @@ def pending_command() -> None:
     table.add_column("Generated At", style="dim")
 
     for r in rows:
-        exp = f"{r['expected_ret']*100:+.2f}%" if r.get("expected_ret") else "—"
+        exp = f"{r['expected_ret']*100:+.2f}%" if r.get("expected_ret") is not None else "—"
         sell_reason = r.get("sell_reason") or "—"
         action = r["action"]
         action_style = "red" if action == "SELL" else ("green" if action == "BUY" else "")
