@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import uuid
 from collections import Counter
 from datetime import date
@@ -22,6 +23,7 @@ from ..data.ingest import load_universe
 from ..data.storage import (
     get_all_last_buy_dates,
     get_annual_trade_count,
+    get_connection,
     get_last_alert,
     get_recommendation_by_id,
     list_pending_recommendations,
@@ -599,19 +601,31 @@ def execute_command(
             f"[yellow]CRA override logged — proceeding with trade #{annual + 1}.[/yellow]"
         )
 
-    trade_id = record_trade(
-        ticker=rec["ticker"],
-        side=rec["action"],
-        units=units,
-        price=price,
-        trade_date=exec_date,
-        fees=0.0,
-        rationale=(
-            f"Recommendation #{rec_id}"
-            + (f" [CRA override: {justification}]" if (force and justification) else "")
-        ),
-    )
-    mark_recommendation_executed(rec_id, fill_price=price, fill_units=units)
+    # F1/F2: record the trade and mark the recommendation executed in ONE
+    # transaction so they cannot diverge (a recorded trade with a still-pending
+    # rec would invite a double-execution). DB/validation errors surface as a
+    # clean message + Exit(1), never a raw traceback on a real-money command.
+    try:
+        with get_connection() as conn:
+            trade_id = record_trade(
+                ticker=rec["ticker"],
+                side=rec["action"],
+                units=units,
+                price=price,
+                trade_date=exec_date,
+                fees=0.0,
+                rationale=(
+                    f"Recommendation #{rec_id}"
+                    + (f" [CRA override: {justification}]" if (force and justification) else "")
+                ),
+                conn=conn,
+            )
+            mark_recommendation_executed(
+                rec_id, fill_price=price, fill_units=units, conn=conn
+            )
+    except (ValueError, sqlite3.Error) as exc:
+        console.print(f"[red]Trade rejected: {exc}[/red]")
+        raise typer.Exit(1)
 
     gross = units * price
     is_sell = rec["action"] == "SELL"

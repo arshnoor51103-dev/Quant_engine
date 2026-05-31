@@ -359,3 +359,71 @@ class TestSchemaVersion:
             db_path=db,
         )
         assert isinstance(rec_id, int) and rec_id > 0
+
+
+# ─── F7: QUANT_DB env override ────────────────────────────────────────────────
+
+def test_default_db_path_uses_quant_db_env(monkeypatch) -> None:
+    """$QUANT_DB, when set, overrides the default repo data/quant.db path."""
+    from src.data import storage
+    target = Path("some") / "where" / "test.db"
+    monkeypatch.setenv("QUANT_DB", str(target))
+    assert storage._default_db_path() == target
+
+
+def test_default_db_path_defaults_to_repo_data(monkeypatch) -> None:
+    """Without $QUANT_DB, the path resolves to <repo>/data/quant.db."""
+    from src.data import storage
+    monkeypatch.delenv("QUANT_DB", raising=False)
+    p = storage._default_db_path()
+    assert p.name == "quant.db"
+    assert p.parent.name == "data"
+
+
+# ─── F2: shared-connection atomicity (record_trade + mark_executed) ───────────
+
+def test_record_trade_external_conn_rolls_back_on_failure(tmp_db: Path) -> None:
+    """record_trade(conn=...) must NOT self-commit; a failure later in the same
+    transaction rolls the trade AND holding back — the atomicity execute needs."""
+    from src.data.storage import get_connection
+    with pytest.raises(sqlite3.OperationalError):
+        with get_connection(tmp_db) as conn:
+            record_trade("VFV.TO", "BUY", 1.0, 100.0, date.today(), conn=conn)
+            conn.execute("UPDATE no_such_table SET x = 1;")  # force failure pre-commit
+    check = get_connection(tmp_db)
+    assert check.execute("SELECT COUNT(*) FROM trades;").fetchone()[0] == 0
+    assert check.execute("SELECT COUNT(*) FROM holdings;").fetchone()[0] == 0
+
+
+def test_record_trade_external_conn_commits_on_caller_exit(tmp_db: Path) -> None:
+    """record_trade(conn=...) persists once the caller's transaction commits."""
+    from src.data.storage import get_connection
+    with get_connection(tmp_db) as conn:
+        tid = record_trade("VFV.TO", "BUY", 2.0, 50.0, date.today(), conn=conn)
+    assert isinstance(tid, int)
+    check = get_connection(tmp_db)
+    assert check.execute("SELECT COUNT(*) FROM trades;").fetchone()[0] == 1
+    assert check.execute(
+        "SELECT units FROM holdings WHERE ticker = 'VFV.TO';"
+    ).fetchone()[0] == 2.0
+
+
+def test_mark_executed_external_conn_rolls_back_on_failure(tmp_db: Path) -> None:
+    """mark_recommendation_executed(conn=...) defers commit to the caller, so a
+    later failure leaves the recommendation still pending."""
+    from src.data.storage import get_connection
+    rec_id = save_recommendation(
+        ticker="VFV.TO", action="BUY", bucket="growth",
+        target_weight=0.20, combined_signal=0.45, expected_ret=0.063,
+        cost_estimate=0.006, gate_status="PASS", rationale=None,
+        run_id="atom01", db_path=tmp_db,
+    )
+    with pytest.raises(sqlite3.OperationalError):
+        with get_connection(tmp_db) as conn:
+            mark_recommendation_executed(rec_id, fill_price=100.0, fill_units=1.0, conn=conn)
+            conn.execute("UPDATE no_such_table SET x = 1;")
+    check = get_connection(tmp_db)
+    status = check.execute(
+        "SELECT status FROM recommendations WHERE id = ?;", (rec_id,)
+    ).fetchone()[0]
+    assert status == "pending"

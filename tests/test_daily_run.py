@@ -174,3 +174,22 @@ def test_log_target_path_writes_file(tmp_path: Path) -> None:
     content = log_file.read_text(encoding="utf-8")
     assert "fetch" in content
     assert "recommend" in content
+
+
+# ─── F4: a raising alert must never abort the run ─────────────────────────────
+
+def test_alert_send_failure_does_not_abort_run(capsys: pytest.CaptureFixture) -> None:
+    """When send_alert itself raises, _send_error_alert must swallow it and the
+    run must still complete with the correct failure count (daily_run contract:
+    'alert failure must never abort the run'). F4 — previously untested."""
+    side_effects = [_fail_proc(), _ok_proc()]
+    with patch("src.cli.daily_run_command.subprocess.run", side_effect=side_effects), \
+         patch("src.cli.daily_run_command.load_portfolio_config",
+               return_value=_alerts_cfg(enabled=True)), \
+         patch("src.cli.daily_run_command.send_alert",
+               side_effect=RuntimeError("ntfy transport exploded")):
+        with DailyRunner() as runner:
+            failures = runner.run()  # must NOT propagate
+
+    assert failures == 1
+    assert "alert send failed" in capsys.readouterr().out

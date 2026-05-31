@@ -13,6 +13,7 @@ Schema is deliberately simple — sqlite, no ORM, raw SQL via sqlite3 stdlib.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, date
 from pathlib import Path
@@ -21,7 +22,19 @@ from typing import TYPE_CHECKING, Callable, Iterable
 if TYPE_CHECKING:
     from ..signals.base import SignalResult
 
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "quant.db"
+
+def _default_db_path() -> Path:
+    """Resolve the SQLite path: ``$QUANT_DB`` if set, else ``<repo>/data/quant.db``.
+
+    The env override lets the real-execution smoke gate (and isolated tests)
+    point write-commands at a throwaway DB instead of the live data/quant.db,
+    which is otherwise hardcoded and untouchable without risking real state.
+    """
+    env = os.environ.get("QUANT_DB")
+    return Path(env) if env else (Path(__file__).resolve().parents[2] / "data" / "quant.db")
+
+
+DB_PATH = _default_db_path()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS prices (
@@ -185,6 +198,7 @@ def record_trade(
     fees: float = 0.0,
     rationale: str | None = None,
     db_path: Path = DB_PATH,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """
     Insert a trade row and update holdings atomically.
@@ -200,6 +214,11 @@ def record_trade(
         trade_date: date of execution
         fees: commission/spread cost in CAD (default 0 for Wealthsimple)
         rationale: free-text note logged with the trade
+        conn: optional open connection. When provided, the trade + holdings
+            write run on it WITHOUT committing — the caller owns the
+            transaction (used by ``execute`` to keep record_trade and
+            mark_recommendation_executed atomic). When None, a private
+            connection is opened and committed.
 
     Returns:
         trade id (AUTOINCREMENT primary key)
@@ -212,64 +231,88 @@ def record_trade(
     if units <= 0:
         raise ValueError(f"units must be positive, got {units}")
 
-    with get_connection(db_path) as conn:
-        # Validate sell quantity against current holding
-        if side == "SELL":
-            row = conn.execute(
-                "SELECT units FROM holdings WHERE ticker = ?;", (ticker,)
-            ).fetchone()
-            held = row["units"] if row else 0.0
-            if units > held + 1e-9:
-                raise ValueError(
-                    f"Cannot sell {units} units of {ticker} — only {held:.4f} held"
-                )
-
-        # Log the trade
-        cur = conn.execute(
-            """
-            INSERT INTO trades (ticker, side, units, price, trade_date, fees, rationale)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
-            """,
-            (ticker, side, units, price, trade_date.isoformat(), fees, rationale),
+    if conn is not None:
+        return _record_trade_on_conn(
+            conn, ticker, side, units, price, trade_date, fees, rationale
         )
-        trade_id = cur.lastrowid
-
-        # Update holdings
-        existing = conn.execute(
-            "SELECT units, avg_cost FROM holdings WHERE ticker = ?;", (ticker,)
-        ).fetchone()
-
-        if side == "BUY":
-            if existing:
-                old_units = existing["units"]
-                old_cost = existing["avg_cost"]
-                new_units = old_units + units
-                new_avg_cost = (old_units * old_cost + units * price) / new_units
-            else:
-                new_units = units
-                new_avg_cost = price
-            conn.execute(
-                """
-                INSERT INTO holdings (ticker, units, avg_cost, last_updated)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(ticker) DO UPDATE SET
-                    units = excluded.units,
-                    avg_cost = excluded.avg_cost,
-                    last_updated = excluded.last_updated;
-                """,
-                (ticker, new_units, new_avg_cost),
-            )
-        else:  # SELL
-            new_units = existing["units"] - units
-            if new_units < 1e-9:
-                conn.execute("DELETE FROM holdings WHERE ticker = ?;", (ticker,))
-            else:
-                conn.execute(
-                    "UPDATE holdings SET units = ?, last_updated = CURRENT_TIMESTAMP WHERE ticker = ?;",
-                    (new_units, ticker),
-                )
-
+    with get_connection(db_path) as conn:
+        trade_id = _record_trade_on_conn(
+            conn, ticker, side, units, price, trade_date, fees, rationale
+        )
         conn.commit()
+    return trade_id
+
+
+def _record_trade_on_conn(
+    conn: sqlite3.Connection,
+    ticker: str,
+    side: str,
+    units: float,
+    price: float,
+    trade_date: date,
+    fees: float,
+    rationale: str | None,
+) -> int:
+    """
+    Trade insert + holdings update on an open connection. Does NOT commit —
+    the caller (record_trade, or an enclosing transaction) owns the commit so
+    the write can be made atomic with sibling writes.
+    """
+    # Validate sell quantity against current holding
+    if side == "SELL":
+        row = conn.execute(
+            "SELECT units FROM holdings WHERE ticker = ?;", (ticker,)
+        ).fetchone()
+        held = row["units"] if row else 0.0
+        if units > held + 1e-9:
+            raise ValueError(
+                f"Cannot sell {units} units of {ticker} — only {held:.4f} held"
+            )
+
+    # Log the trade
+    cur = conn.execute(
+        """
+        INSERT INTO trades (ticker, side, units, price, trade_date, fees, rationale)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """,
+        (ticker, side, units, price, trade_date.isoformat(), fees, rationale),
+    )
+    trade_id = cur.lastrowid
+
+    # Update holdings
+    existing = conn.execute(
+        "SELECT units, avg_cost FROM holdings WHERE ticker = ?;", (ticker,)
+    ).fetchone()
+
+    if side == "BUY":
+        if existing:
+            old_units = existing["units"]
+            old_cost = existing["avg_cost"]
+            new_units = old_units + units
+            new_avg_cost = (old_units * old_cost + units * price) / new_units
+        else:
+            new_units = units
+            new_avg_cost = price
+        conn.execute(
+            """
+            INSERT INTO holdings (ticker, units, avg_cost, last_updated)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(ticker) DO UPDATE SET
+                units = excluded.units,
+                avg_cost = excluded.avg_cost,
+                last_updated = excluded.last_updated;
+            """,
+            (ticker, new_units, new_avg_cost),
+        )
+    else:  # SELL
+        new_units = existing["units"] - units
+        if new_units < 1e-9:
+            conn.execute("DELETE FROM holdings WHERE ticker = ?;", (ticker,))
+        else:
+            conn.execute(
+                "UPDATE holdings SET units = ?, last_updated = CURRENT_TIMESTAMP WHERE ticker = ?;",
+                (new_units, ticker),
+            )
     return trade_id
 
 
@@ -407,20 +450,28 @@ def mark_recommendation_executed(
     fill_price: float,
     fill_units: float,
     db_path: Path = DB_PATH,
+    conn: sqlite3.Connection | None = None,
 ) -> None:
-    """Update recommendation status to executed with actual fill details."""
+    """Update recommendation status to executed with actual fill details.
+
+    When ``conn`` is provided the UPDATE runs on it WITHOUT committing — the
+    caller owns the transaction so this can be made atomic with the matching
+    record_trade write. When None, a private connection is opened and committed.
+    """
+    sql = """
+        UPDATE recommendations
+        SET status = 'executed',
+            fill_price = ?,
+            fill_units = ?,
+            executed_at = CURRENT_TIMESTAMP
+        WHERE id = ?;
+    """
+    params = (fill_price, fill_units, rec_id)
+    if conn is not None:
+        conn.execute(sql, params)
+        return
     with get_connection(db_path) as conn:
-        conn.execute(
-            """
-            UPDATE recommendations
-            SET status = 'executed',
-                fill_price = ?,
-                fill_units = ?,
-                executed_at = CURRENT_TIMESTAMP
-            WHERE id = ?;
-            """,
-            (fill_price, fill_units, rec_id),
-        )
+        conn.execute(sql, params)
         conn.commit()
 
 

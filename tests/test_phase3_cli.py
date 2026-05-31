@@ -88,6 +88,7 @@ def test_execute_force_with_justification_proceeds(monkeypatch):
     monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
     monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
     monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 24)
+    monkeypatch.setattr(p3, "get_connection", lambda *a, **k: _DummyConn(), raising=False)
     logged = {}
     monkeypatch.setattr(p3, "record_trade", lambda **k: 99)
     monkeypatch.setattr(p3, "mark_recommendation_executed", lambda *a, **k: None)
@@ -102,6 +103,7 @@ def test_execute_under_cap_proceeds_without_force(monkeypatch):
     monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
     monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
     monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 5)
+    monkeypatch.setattr(p3, "get_connection", lambda *a, **k: _DummyConn(), raising=False)
     recorded = {}
     monkeypatch.setattr(p3, "record_trade", lambda **k: recorded.update(k) or 7)
     monkeypatch.setattr(p3, "mark_recommendation_executed", lambda *a, **k: None)
@@ -144,3 +146,55 @@ def test_recommend_save_persists_real_target_weight(monkeypatch):
 
     assert saved.get("ticker") == "VFV.TO"
     assert saved.get("target_weight") == pytest.approx(0.6)
+
+
+# ─── F1/F2: execute + trade fail cleanly on DB errors, atomically ─────────────
+
+class _DummyConn:
+    """Context-manager stand-in for a sqlite3 connection in execute tests."""
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False          # never suppress exceptions
+    def execute(self, *a, **k): return None
+    def commit(self): pass
+
+
+def test_execute_clean_error_and_atomic_on_db_failure(monkeypatch):
+    """A DB error from record_trade surfaces as a clean Exit(1) — not a raw
+    sqlite3 traceback — and mark_recommendation_executed must NOT run when the
+    trade write failed (F1 clean error + F2 atomicity)."""
+    import sqlite3
+    monkeypatch.setattr(p3, "get_recommendation_by_id", lambda rid: _pending_buy(rid))
+    monkeypatch.setattr(p3, "load_universe_map", lambda: {"VFV.TO": {"bucket": "growth"}})
+    monkeypatch.setattr(p3, "get_annual_trade_count", lambda: 0)
+    monkeypatch.setattr(p3, "get_connection", lambda *a, **k: _DummyConn(), raising=False)
+    monkeypatch.setattr(
+        p3, "record_trade",
+        lambda **k: (_ for _ in ()).throw(sqlite3.OperationalError("disk I/O error")),
+    )
+    mark_called = {"v": False}
+    monkeypatch.setattr(p3, "mark_recommendation_executed",
+                        lambda *a, **k: mark_called.__setitem__("v", True))
+
+    with pytest.raises(typer.Exit) as ei:
+        p3.execute_command(rec_id=1, price=100.0, units=1.0,
+                           trade_date_str=None, force=False, justification=None)
+
+    assert ei.value.exit_code == 1
+    assert mark_called["v"] is False, "mark_executed must not run if the trade failed"
+
+
+def test_trade_command_clean_error_on_db_failure(monkeypatch):
+    """main.py `trade` must catch a DB error from record_trade and Exit(1)
+    cleanly rather than dumping a sqlite3 traceback (F1)."""
+    import sqlite3
+    import src.cli.main as m
+    monkeypatch.setattr(m, "load_universe",
+                        lambda: [{"ticker": "VFV.TO", "bucket": "growth"}])
+    monkeypatch.setattr(
+        m, "record_trade",
+        lambda **k: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked")),
+    )
+    with pytest.raises(typer.Exit) as ei:
+        m.trade("VFV.TO", "BUY", 1.0, 10.0,
+                trade_date=None, fees=0.0, rationale=None)
+    assert ei.value.exit_code == 1

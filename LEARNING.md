@@ -566,3 +566,24 @@ A `recommend --notify` smoke run failed with `OperationalError: no such table: a
 - HTTP header values are latin-1, not UTF-8. Rich body text ≠ header text. Sanitize at the transport boundary so no caller can ever crash a header.
 - Green tests against temp DBs do not prove the *live* DB is in sync. Schema drift between `SCHEMA`-in-code and `data/quant.db` is invisible until a command touches the missing table. (See `docs/runbooks/TIER1_OPERATIONALIZATION.md` Step 1.)
 - On Windows + Python <3.15, force UTF-8 stdout at entry or every glyph is a latent crash. Subprocess capture hides it; the operator's terminal will not.
+
+---
+
+**Mistake & Correction — 2026-05-31 (follow-up audit: "if we missed those, what else?")**
+
+After the alert/encoding cluster, ran a full read-only audit across three fronts (every `except` clause for type-coverage gaps; every process entry point for UTF-8 coverage; every "never raises / must not fail" contract for a failure-path test) plus a live read-only execution pass of all 8 read-only CLI commands. All 8 exited 0; DailyRunner was found genuinely encoding-correct (UTF-8 log file + `PYTHONUTF8=1` subprocess). Seven findings; five fixed this pass:
+
+1. **F1 — real-money trade commands leaked DB errors.** `quant execute` wrapped `record_trade` in **no** try/except; `quant trade` caught **only `ValueError`**. `record_trade` does DB I/O, so a `sqlite3.OperationalError`/`IntegrityError` (or a SELL-too-many `ValueError` on `execute`) escaped as a raw traceback. Same shape as the latin-1 bug: narrow except, body raises an uncaught type. Fix: both paths now catch `(ValueError, sqlite3.Error)` → clean `Trade rejected: …` + Exit(1).
+2. **F2 — `execute` did two non-atomic writes** (`record_trade` then `mark_recommendation_executed`). A failure between them = a recorded trade with a still-pending rec → possible double-execution. Fix (shared-connection): both functions take an optional `conn`; `execute_command` runs them in one `with get_connection() as conn:` transaction, so either both commit or both roll back. Verified by a storage test that forces a mid-transaction failure and asserts zero rows persisted.
+3. **F3 — `_clamped_regime_score` fell back to NORMAL silently.** Added `logger.warning` (module logger, matching optimizer.py) so a bad regime string is never swallowed unlogged.
+4. **F4 — daily-run "alert failure must never abort the run" was untested.** Added a failure-path test: `send_alert` raising → run still completes with the correct failure count.
+5. **F7 — `DB_PATH` was hardcoded**, so write-commands could only be exercised against the live DB — a root reason these paths were never run. Added `$QUANT_DB` override (`_default_db_path()`). This unlocked a real end-to-end write-path check: BUY → oversell (clean `Cannot sell …` Exit 1) → SELL, against a throwaway DB, live DB untouched.
+
+Deferred as documented/theoretical: F5 (`scripts/daily_run.py` bypasses `_force_utf8_output`, but DailyRunner is internally UTF-8-safe) and F6 (`send_alert`'s narrow except, now moot post-sanitization).
+
+**Tests:** +9 (2 F7, 1 F3, 1 F4, 3 F2-atomicity, 2 F1-CLI). 270/270 passing.
+
+**Lessons:**
+- The audit's highest-yield finding wasn't a bug — it was that **write paths had never been executed** because the DB path was unmockable. Hardcoded resources don't just hurt testing; they guarantee the untested path ships. Make the resource injectable (`$QUANT_DB`) and the smoke gate writes itself.
+- "Narrow `except`, body raises a wider type" is a *pattern*, not a one-off. After finding it once (latin-1), grep every `except (...)` and ask "what else can the body throw?" — F1 was the same bug in two more real-money commands.
+- Two sequential writes that must agree belong in one transaction. "It'll basically never fail between them" is how a double-booked real trade happens.

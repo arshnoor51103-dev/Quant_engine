@@ -513,3 +513,19 @@ def test_derive_stable_tickers_reflects_rebucketing(monkeypatch):
         "C.TO": {"bucket": "stable"},
     })
     assert vr._derive_stable_tickers() == frozenset({"A.TO", "C.TO"})
+
+
+# ─── F3: regime-score fallback is logged, not silent ──────────────────────────
+
+def test_unknown_regime_falls_back_to_normal_and_logs(caplog) -> None:
+    """An unrecognized regime string falls back to NORMAL's clamped score AND
+    logs a warning — the fallback must not be silent (F3, CLAUDE.md)."""
+    import logging
+    from src.portfolio.recommendations import _clamped_regime_score
+    from src.signals.vol_regime import Regime, REGIME_SCORES
+
+    with caplog.at_level(logging.WARNING):
+        score = _clamped_regime_score(_regime_result("garbage_regime"))
+
+    assert score == max(REGIME_SCORES[Regime.NORMAL], 0.0)
+    assert "garbage_regime" in caplog.text, "fallback must log the bad regime"

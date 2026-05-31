@@ -11,6 +11,7 @@ Run:
 """
 from __future__ import annotations
 
+import sqlite3
 import sys
 from datetime import date
 
@@ -234,7 +235,7 @@ def trade(
             fees=fees,
             rationale=rationale,
         )
-    except ValueError as exc:
+    except (ValueError, sqlite3.Error) as exc:
         console.print(f"[red]Trade rejected: {exc}[/red]")
         raise typer.Exit(1)
 
