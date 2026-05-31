@@ -1,6 +1,6 @@
 # PROJECT STATUS — Quant Engine
 > **Fresh-session onboarding doc.** Read this + CLAUDE.md before touching anything.
-> Last updated: 2026-05-28 (v1.0.0-tier1 — Tier 1 complete, all Phase 3 subsystems shipped, 204/204 tests passing).
+> Last updated: 2026-05-30 (v1.2.0-guardrails — Tier 1 code-review cleanup, all 22 findings closed, 234 tests passing). Prior: v1.0.0-tier1 (2026-05-28).
 
 ---
 
@@ -40,6 +40,17 @@ A personal systematic investing engine for Arsh's Wealthsimple TFSA. Math-driven
 | Research Pipeline (Structured) | ✅ Structured (2026-05-23) | — | `docs/research/` — hypothesis lifecycle tracker, kill criteria, graveyard, watchlist |
 | Hypothesis Queue | ✅ Cleared | v0.7.0-hypothesis-cleanup | H004 KILLED (Moreira-Muir), H005 KILLED (RSI redundancy), H006 SHELVED (ETF incompatibility) |
 | **Tier 1** | **✅ Production-ready** | **v1.0.0-tier1** | **All subsystems shipped. Daily auto-run live. 204/204 tests.** |
+| v1.2.0 — Guardrails Cleanup | ✅ Complete (2026-05-30) | v1.2.0-guardrails | 22 Tier-1 review findings closed: CRA hard-block (F1), drawdown soft-halt (F2), fail-loud fetch/signals (F3/F4), drift-SELL exemption ratified (F5), ticker_metadata allow-list (F6/F10/F20), STABLE_TICKERS single-source (F14), schema_version migration runner (F15), DB-backed E2E test (F13). 234 tests. |
+
+---
+
+## v1.2.0 Guardrails — what changed for the operator
+
+- **Execution is now hard-blocked at the CRA 24-trade/year cap.** `quant execute` refuses trade #25; the only way past is `--force --justification "reason"`, which is logged to `run_log`. This is a legal boundary on a TFSA, not a soft warning.
+- **New BUYs are soft-halted at the 20% drawdown ceiling.** When the portfolio is at/below the ceiling, `quant recommend` converts BUY cards to SKIP (`DRAWDOWN_HALT`) and prints a RISK HALT banner; SELL/rebalance still flow. Toggle: `risk.drawdown_halt_enabled` in `portfolio.yaml`.
+- **`quant fetch` and `quant signals` now fail loud** (non-zero exit) instead of silently producing partial data — fetch retries with backoff first.
+- **Capital-tier reality check (F7):** `capital_tier` is declared-but-inert today. Tier 1 is enforced by the `universe.yaml` lock + `execute_command`'s universe check. Automatic tier-switching (NAV ≥ $10k → widen universe) is a **Tier 2 deliverable, not built**. See CLAUDE.md Hard Constraint 5.
+- **Test claim correction (F13):** the end-to-end pipeline is now covered by a real DB-backed round-trip test (`TestEndToEndDB` in `test_integration.py`: seed prices → save recommendation → record trade → mark executed → assert persistence), not only the in-memory pure-function pipeline test.
 
 ---
 

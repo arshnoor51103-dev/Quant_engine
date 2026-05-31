@@ -37,15 +37,18 @@ Build a personal systematic investing engine that operates like a small quant fu
 3. **Cost-aware signals**
    No trade fires unless `expected_return ≥ 2 × bid_ask_spread + 0.5% profit_floor`. Every recommendation must justify it cleared this gate.
 
+   **Exception — drift-triggered SELL.** A rebalancing trim that brings a bucket back inside its tolerance band is risk-control, not alpha-capture, so it is **not** gated on the profit-floor. It is gated on the `min_rebalance_trade` ($50) dollar floor + MIN_HOLD + CRA cap instead. Its `cost_estimate` still records the honest spread cost (`2 × spread`) for audit. Code: the drift branch in `generate_trade_cards` (`sell_reason="DRIFT"`). Ratified 2026-05-30 (v1.2.0, F5).
+
 4. **No LLM in the signal path**
    Models are deterministic: momentum, mean reversion, volatility regime, factor exposure, correlation breakdown. No GPT/Claude/any LLM in the trade decision loop. LLMs may be used for: code generation, doc writing, post-hoc analysis, dashboard prose. Never for signals.
 
-5. **Capital-tier scaling**
-   All modules read `capital_tier` from `config/portfolio.yaml`. Universe and constraints scale automatically at thresholds:
+5. **Capital-tier scaling** (intended progression — Tier 1 enforced today)
    - Tier 1 ($0–$10k): Canadian ETFs only, 6–9 tickers
    - Tier 2 ($10k–$25k): + Canadian dividend stocks (blue chips)
    - Tier 3 ($25k–$50k): + US-listed ETFs (FX cost worth it at scale)
    - Tier 4 ($50k+): + individual large-cap stocks, sector rotation
+
+   **What is actually enforced today (Tier 1):** the universe lock is enforced by `universe.yaml` membership + the universe check in `execute_command` — a trade on any ticker outside the configured universe is refused. `capital_tier` in `config/portfolio.yaml` is a **declared-but-inert** value: no module branches on it yet. Runtime tier-transition machinery (NAV ≥ $10k detection, automatic universe widening) is a **Tier 2 deliverable**, not built. The `region:` fields in `universe.yaml` are descriptive metadata, not enforced filters. Corrected 2026-05-30 (v1.2.0, F7) — the prior "all modules read capital_tier / scale automatically" claim overstated the implementation.
 
 6. **Persistence**
    All state in SQLite at `data/quant.db`. Nothing lives in memory only. Every signal, trade recommendation, executed trade, rebalance, and metric snapshot logged with timestamp.
