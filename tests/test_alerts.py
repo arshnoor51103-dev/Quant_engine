@@ -48,6 +48,14 @@ def test_send_alert_silences_network_error() -> None:
         send_alert("t", "T", "M")  # must not raise
 
 
+def test_send_alert_silences_non_oserror_exception() -> None:
+    """F6: 'Never raises' must hold for ANY exception type from the transport,
+    not just RequestException/OSError — a ValueError (e.g. a future header
+    encoding edge) must still be swallowed, matching the docstring contract."""
+    with patch("src.alerts.ntfy.requests.post", side_effect=ValueError("boom")):
+        send_alert("t", "T", "M")  # must not raise
+
+
 # ─── Trigger logic: _run_alert_triggers ──────────────────────────────────────
 
 import pandas as pd

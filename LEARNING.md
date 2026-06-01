@@ -648,3 +648,15 @@ But that is per-test discipline — the exact thing the 2026-05-31 DB-isolation 
 **Tests:** `tests/test_network_isolation.py` (+3: external `create_connection` blocked, external raw `connect` blocked, loopback passes through to the OS). 321/321 passing. The RED run confirmed the environment has live network access (the unguarded `create_connection("example.com", 80)` succeeded) — i.e. the guard closes a real, open door.
 
 **Lesson:** "No test hits the network" is a property to *enforce*, not to *audit once*. An audit is a snapshot; a conftest guard is a ratchet. Same shape as the DB fix — redirect/deny the resource at the session layer so the next forgotten mock fails loudly instead of silently calling out.
+
+---
+
+**Decision — 2026-05-31 — Close deferred audit findings F5 (UTF-8 entry) + F6 (send_alert except)**
+
+The 2026-05-31 follow-up audit deferred F5 and F6 as documented/theoretical. Closed both.
+
+- **F6** — `send_alert`'s `except (requests.RequestException, OSError)` did not actually cover its "never raises" docstring: a non-OSError (e.g. a `ValueError` from a future header-encoding edge) would escape into the recommendation pipeline. Broadened to `except Exception` (matching the `daily_run` pattern; not a bare `except:`, so CLAUDE.md-compliant) so an alert failure of *any* type is logged and dropped. Test: `test_alerts.py` (+1 — a `ValueError` from `requests.post` is swallowed).
+
+- **F5** — `scripts/daily_run.py` (the scheduled entry) never forced UTF-8 on its own process, so an uncaught traceback carrying a non-cp1252 glyph could itself crash on a legacy Windows console (DailyRunner's log file + subprocess env were already UTF-8-safe, but the parent process console was not). Extracted `_force_utf8_output` from `main.py` into `src/cli/encoding.py` as `force_utf8_output()` — one source of truth shared by the interactive CLI and the scheduled entry; the script calls it first in `main()`. Test: `test_daily_run.py` (+1 — the entry calls `force_utf8_output`).
+
+323/323 passing. **Lesson:** a "deferred / theoretical" finding is still an open door; closing it is a one-line change plus a test, far cheaper than the incident it prevents. Every process entry point — not just the primary CLI — needs the UTF-8 guard.

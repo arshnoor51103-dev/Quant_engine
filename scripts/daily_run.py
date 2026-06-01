@@ -15,10 +15,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.cli.daily_run_command import DailyRunner
+from src.cli.encoding import force_utf8_output
 from src.portfolio.model import load_portfolio_config
 
 
 def main() -> int:
+    # F5: belt-and-suspenders — force UTF-8 at the scheduled entry so an uncaught
+    # traceback carrying a non-cp1252 glyph cannot itself crash on a Windows
+    # console (DailyRunner's log file + subprocess env are already UTF-8-safe).
+    force_utf8_output()
     cfg = load_portfolio_config()
     dr_cfg = cfg.get("daily_run", {})
     log_path = _PROJECT_ROOT / "logs" / f"{date.today()}.log"
