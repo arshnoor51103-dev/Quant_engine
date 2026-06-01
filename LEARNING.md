@@ -635,4 +635,28 @@ The 2026-05-31 pending pile-up (63 unsuperseded recs + zombie ZAG.TO) was found 
 
 **Deliberate scope calls:** no `--fix` (read-only); not auto-wired into `daily-run` this pass (chaining a non-zero-exit audit changes that pipeline's failure semantics — its own decision).
 
-**Build:** TDD, one check at a time. Tests seed a temp DB from `SCHEMA`, insert clean + broken states, assert findings/severity; CLI test via typer `CliRunner` against a temp `$QUANT_DB`. Live DB never touched (conftest isolation).
+**Build:** TDD, one check at a time. Tests seed a temp DB from `SCHEMA`, insert clean + broken states, assert findings/severity; CLI tests monkeypatch the command's injected deps (conn, universe, config, run_log) against an in-memory DB. Live DB never touched (conftest isolation).
+
+---
+
+**Decision — 2026-05-31 — Test isolation: close the network class, not just the DB instance**
+
+Follow-up to the conftest `$QUANT_DB` DB isolation. Audited every test for real network / live-resource use: `test_ingest.py` mocks `fetch_ticker` (yfinance) + `upsert_prices`; `test_alerts.py` mocks `requests.post`; `test_daily_run.py` mocks `subprocess.run` in every `runner.run()` test; `test_H005_rsi_backtest.py` reads the live `data/quant.db` **read-only** by design (`skipif(not DB_PATH.exists())`). **No test makes a real network call today.**
+
+But that is per-test discipline — the exact thing the 2026-05-31 DB-isolation lesson says is "opt-in and therefore eventually forgotten." The DB class was closed at the infrastructure layer; the network class was not. Closed it: `conftest.py` now installs a socket guard (`socket.create_connection` + `socket.socket.connect`/`connect_ex`) that raises a loud `RuntimeError` on any outbound connection to a non-loopback host, naming the fix. Loopback (`127.0.0.1`/`::1`/`localhost`/`0.0.0.0`) stays allowed for a future in-process server test. Mocked transports never reach a socket, so the existing suite is unaffected.
+
+**Tests:** `tests/test_network_isolation.py` (+3: external `create_connection` blocked, external raw `connect` blocked, loopback passes through to the OS). 321/321 passing. The RED run confirmed the environment has live network access (the unguarded `create_connection("example.com", 80)` succeeded) — i.e. the guard closes a real, open door.
+
+**Lesson:** "No test hits the network" is a property to *enforce*, not to *audit once*. An audit is a snapshot; a conftest guard is a ratchet. Same shape as the DB fix — redirect/deny the resource at the session layer so the next forgotten mock fails loudly instead of silently calling out.
+
+---
+
+**Decision — 2026-05-31 — Close deferred audit findings F5 (UTF-8 entry) + F6 (send_alert except)**
+
+The 2026-05-31 follow-up audit deferred F5 and F6 as documented/theoretical. Closed both.
+
+- **F6** — `send_alert`'s `except (requests.RequestException, OSError)` did not actually cover its "never raises" docstring: a non-OSError (e.g. a `ValueError` from a future header-encoding edge) would escape into the recommendation pipeline. Broadened to `except Exception` (matching the `daily_run` pattern; not a bare `except:`, so CLAUDE.md-compliant) so an alert failure of *any* type is logged and dropped. Test: `test_alerts.py` (+1 — a `ValueError` from `requests.post` is swallowed).
+
+- **F5** — `scripts/daily_run.py` (the scheduled entry) never forced UTF-8 on its own process, so an uncaught traceback carrying a non-cp1252 glyph could itself crash on a legacy Windows console (DailyRunner's log file + subprocess env were already UTF-8-safe, but the parent process console was not). Extracted `_force_utf8_output` from `main.py` into `src/cli/encoding.py` as `force_utf8_output()` — one source of truth shared by the interactive CLI and the scheduled entry; the script calls it first in `main()`. Test: `test_daily_run.py` (+1 — the entry calls `force_utf8_output`).
+
+323/323 passing. **Lesson:** a "deferred / theoretical" finding is still an open door; closing it is a one-line change plus a test, far cheaper than the incident it prevents. Every process entry point — not just the primary CLI — needs the UTF-8 guard.

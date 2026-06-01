@@ -193,3 +193,44 @@ def test_alert_send_failure_does_not_abort_run(capsys: pytest.CaptureFixture) ->
 
     assert failures == 1
     assert "alert send failed" in capsys.readouterr().out
+
+
+# ─── F5: scheduled entry forces UTF-8 output ──────────────────────────────────
+
+def _load_daily_run_script():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "daily_run.py"
+    spec = importlib.util.spec_from_file_location("daily_run_script", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_daily_run_script_forces_utf8_at_entry(monkeypatch):
+    """F5: the scheduled entry forces UTF-8 output before running, so an uncaught
+    traceback carrying a non-cp1252 glyph cannot itself crash on a legacy Windows
+    console (belt-and-suspenders over DailyRunner's internal UTF-8 safety)."""
+    mod = _load_daily_run_script()
+    called = {"v": False}
+    monkeypatch.setattr(mod, "force_utf8_output", lambda: called.__setitem__("v", True))
+
+    class _DR:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr(mod, "DailyRunner", _DR)
+    monkeypatch.setattr(mod, "load_portfolio_config", lambda: {"daily_run": {}})
+
+    mod.main()
+    assert called["v"] is True

@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from src.cli.main import _force_utf8_output
+from src.cli.encoding import force_utf8_output
 
 _GLYPHS = "✓ — → █"  # checkmark, em-dash, arrow, block — none are cp1252
 
@@ -33,7 +33,7 @@ def test_force_utf8_output_makes_cp1252_stream_unicode_safe() -> None:
     orig_out, orig_err = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = cp1252_stream
     try:
-        _force_utf8_output()
+        force_utf8_output()
         sys.stdout.write(_GLYPHS)  # must not raise
         sys.stdout.flush()
     finally:
@@ -46,6 +46,6 @@ def test_force_utf8_output_noop_on_stream_without_reconfigure() -> None:
     orig_out, orig_err = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = io.StringIO()  # no .reconfigure attribute
     try:
-        _force_utf8_output()  # must not raise
+        force_utf8_output()  # must not raise
     finally:
         sys.stdout, sys.stderr = orig_out, orig_err

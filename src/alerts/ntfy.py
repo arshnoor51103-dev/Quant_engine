@@ -82,5 +82,8 @@ def send_alert(
             headers=headers,
             timeout=_TIMEOUT,
         )
-    except (requests.RequestException, OSError) as exc:
+    except Exception as exc:  # noqa: BLE001 — contract: send_alert never raises
+        # Broadened from (RequestException, OSError) so the "never raises"
+        # docstring holds for *any* transport error (F6) — an alert failure must
+        # never propagate into the recommendation pipeline.
         logging.warning("ntfy.sh alert failed — %s", exc)
