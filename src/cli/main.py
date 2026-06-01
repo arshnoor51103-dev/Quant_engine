@@ -11,8 +11,11 @@ Run:
 """
 from __future__ import annotations
 
-import typer
+import sqlite3
+import sys
 from datetime import date
+
+import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -36,6 +39,29 @@ from .phase3_commands import (
 )
 from .daily_run_command import daily_run_command
 from ..alerts.ntfy import send_alert
+
+def _force_utf8_output() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so Rich glyphs never crash output.
+
+    Python < 3.15 on Windows defaults interactive console output to the active
+    code page (typically cp1252), so a non-cp1252 glyph in a printed string
+    (the init ✓, em-dashes, arrows, box-drawing) raises UnicodeEncodeError
+    mid-command — after side effects have already run. This opts the process
+    into UTF-8 output. No-op on streams that cannot be reconfigured (e.g. some
+    captured test buffers).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (ValueError, OSError):
+            # Already written to, or not reconfigurable — leave as-is.
+            pass
+
+
+_force_utf8_output()
 
 app = typer.Typer(add_completion=False, help="Quant Engine CLI")
 console = Console()
@@ -209,7 +235,7 @@ def trade(
             fees=fees,
             rationale=rationale,
         )
-    except ValueError as exc:
+    except (ValueError, sqlite3.Error) as exc:
         console.print(f"[red]Trade rejected: {exc}[/red]")
         raise typer.Exit(1)
 

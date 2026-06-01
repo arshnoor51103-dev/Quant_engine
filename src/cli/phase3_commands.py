@@ -6,6 +6,8 @@ Commands: `quant recommend`, `quant execute`, `quant pending`
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
 import uuid
 from collections import Counter
 from datetime import date
@@ -21,6 +23,7 @@ from ..data.ingest import load_universe
 from ..data.storage import (
     get_all_last_buy_dates,
     get_annual_trade_count,
+    get_connection,
     get_last_alert,
     get_recommendation_by_id,
     list_pending_recommendations,
@@ -31,6 +34,7 @@ from ..data.storage import (
     persist_signals,
     record_trade,
     save_recommendation,
+    supersede_pending_recommendations,
 )
 from ..portfolio.metrics import max_drawdown
 from ..portfolio.model import (
@@ -281,10 +285,36 @@ def _run_alert_triggers(
     price_data: dict[str, pd.Series],
 ) -> None:
     """
+    Run the alert triggers as a fire-and-forget side effect.
+
+    Alerting must never abort the recommendation pipeline (ntfy.py contract:
+    "The recommendation pipeline must not fail because an alert failed.").
+    Any failure — HTTP, header encoding, or a missing/locked DB table such as
+    alerts_log — is logged at WARNING and surfaced to the console, then
+    dropped. This function never raises.
+    """
+    try:
+        _evaluate_alert_triggers(
+            cards, regime_name, portfolio_cfg, holdings, price_data
+        )
+    except Exception as exc:  # noqa: BLE001 — alerts are non-critical by contract
+        logging.warning("alert triggers failed — %s", exc, exc_info=True)
+        console.print(f"[yellow]Alerts skipped (non-fatal): {exc}[/yellow]")
+
+
+def _evaluate_alert_triggers(
+    cards: list[TradeCard],
+    regime_name: str,
+    portfolio_cfg: dict,
+    holdings: list,
+    price_data: dict[str, pd.Series],
+) -> None:
+    """
     Evaluate the three alert triggers and POST to ntfy.sh where warranted.
 
-    Called from recommend_command when --notify is set. All HTTP failures
-    are swallowed inside send_alert — this function never raises.
+    Called via _run_alert_triggers, which owns the never-raise guarantee.
+    May raise on DB errors (e.g. a missing alerts_log table); the wrapper
+    logs and drops them so the recommendation pipeline is unaffected.
     """
     alerts_cfg = portfolio_cfg.get("alerts", {})
     if not alerts_cfg.get("enabled"):
@@ -486,6 +516,14 @@ def recommend_command(
                 sell_reason=card.sell_reason,
             )
             card.rec_id = rec_id
+        # This run is the current full-universe snapshot — retire the previous
+        # run's still-pending cards so `quant pending` shows one trustworthy,
+        # non-duplicated actionable set (audit 2026-05-31).
+        n_superseded = supersede_pending_recommendations(keep_run_id=run_id)
+        if n_superseded:
+            console.print(
+                f"[dim]Superseded {n_superseded} stale pending rec(s) from prior runs.[/dim]"
+            )
 
     max_trades = int(portfolio_cfg["trading"].get("max_trades_per_year", 24))
     _print_cards(
@@ -572,19 +610,31 @@ def execute_command(
             f"[yellow]CRA override logged — proceeding with trade #{annual + 1}.[/yellow]"
         )
 
-    trade_id = record_trade(
-        ticker=rec["ticker"],
-        side=rec["action"],
-        units=units,
-        price=price,
-        trade_date=exec_date,
-        fees=0.0,
-        rationale=(
-            f"Recommendation #{rec_id}"
-            + (f" [CRA override: {justification}]" if (force and justification) else "")
-        ),
-    )
-    mark_recommendation_executed(rec_id, fill_price=price, fill_units=units)
+    # F1/F2: record the trade and mark the recommendation executed in ONE
+    # transaction so they cannot diverge (a recorded trade with a still-pending
+    # rec would invite a double-execution). DB/validation errors surface as a
+    # clean message + Exit(1), never a raw traceback on a real-money command.
+    try:
+        with get_connection() as conn:
+            trade_id = record_trade(
+                ticker=rec["ticker"],
+                side=rec["action"],
+                units=units,
+                price=price,
+                trade_date=exec_date,
+                fees=0.0,
+                rationale=(
+                    f"Recommendation #{rec_id}"
+                    + (f" [CRA override: {justification}]" if (force and justification) else "")
+                ),
+                conn=conn,
+            )
+            mark_recommendation_executed(
+                rec_id, fill_price=price, fill_units=units, conn=conn
+            )
+    except (ValueError, sqlite3.Error) as exc:
+        console.print(f"[red]Trade rejected: {exc}[/red]")
+        raise typer.Exit(1)
 
     gross = units * price
     is_sell = rec["action"] == "SELL"

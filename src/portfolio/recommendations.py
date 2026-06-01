@@ -23,6 +23,7 @@ Design decisions (2026-05-20, LEARNING.md):
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -30,6 +31,8 @@ from enum import Enum
 from ..signals.base import SignalResult
 from ..signals.vol_regime import Regime, REGIME_SCORES, STABLE_TICKERS
 from .model import Holding
+
+logger = logging.getLogger(__name__)
 
 
 class GateStatus(str, Enum):
@@ -74,6 +77,11 @@ def _clamped_regime_score(regime_result: SignalResult) -> float:
     try:
         base = REGIME_SCORES[Regime(regime_str)]
     except (ValueError, KeyError):
+        logger.warning(
+            "unrecognized regime %r in regime signal metadata — falling back to "
+            "NORMAL score; this indicates a vol_regime signal bug if it recurs",
+            regime_str,
+        )
         base = REGIME_SCORES[Regime.NORMAL]
     return max(base, 0.0)
 

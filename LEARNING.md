@@ -544,3 +544,63 @@ audit path.
   if nullable columns are added to `signal_scores` in future.
 
 **Lesson:** Silent neutral fallback (`score=0.0`) on insufficient data is correct behavior for signal integrity, but callers must actively use `sig.lookback_days` to size the fetch window. Never hardcode a lookback constant that could silently undercut a signal's required history.
+
+---
+
+**Mistake & Correction — 2026-05-31**
+
+**Bug cluster: `recommend --notify` died silently, and so did the alert about it (3 root causes + 1 systemic)**
+
+A `recommend --notify` smoke run failed with `OperationalError: no such table: alerts_log`, and the daily-run alert meant to report that failure *also* failed with `'latin-1' codec can't encode character '—'`. Net effect on a real-money system: the daily pipeline broke and the operator was never notified — a doubly-silent failure.
+
+**Root causes (all distinct):**
+1. **Stale live DB (Bug A).** `data/quant.db` predated the `alerts_log` + `schema_version` DDL; `quant init` had not been re-run. Schema in code was correct — the live DB was simply un-synced. Fix: ran idempotent `quant init` (additive `CREATE TABLE IF NOT EXISTS` + `run_migrations()`); 63 recs preserved, tables added, `schema_version=[1,2]`.
+2. **Unguarded alert side-effect (Bug C).** `_run_alert_triggers` was called from `recommend_command` with no guard, and `log_alert`/`get_last_alert` do DB I/O that can raise — so an alerting failure crashed the *primary* recommendation pipeline. This violated the ntfy.py contract ("the recommendation pipeline must not fail because an alert failed") and the function's own false "never raises" docstring. Fix: split into a guarded wrapper `_run_alert_triggers` (logs + console-warns on any failure, never raises) over an inner `_evaluate_alert_triggers`.
+3. **Non-latin-1 HTTP header (Bug B).** `send_alert` puts the title in the `X-Title` header; `requests` encodes header values as latin-1. The daily-run error title `Quant Engine — {step} FAILED` carries an em-dash (U+2014) at position 13. `UnicodeEncodeError` is a `ValueError`, *not* caught by `except (RequestException, OSError)`. Fix: `_latin1_header()` maps common Unicode punctuation (—, –, →, …, curly quotes) to ASCII and `encode("latin-1", "replace")`s the rest, applied to `X-Title` and `X-Tags`. Body is unaffected (sent as UTF-8 bytes).
+4. **Systemic Windows-console crash (Bug D), discovered while applying the fix.** `quant init` crashed on its own `✓` success message: `'charmap' codec can't encode '✓'`. Python <3.15 on Windows defaults console output to cp1252, so *every* CLI command printing a non-cp1252 glyph (`✓ — → █ ─`) crashes when run directly in a terminal (it survived the smoke harness only because subprocess PIPEs default to UTF-8). Fix: `_force_utf8_output()` reconfigures stdout/stderr to UTF-8 at CLI entry in `main.py`.
+
+**Tests:** `tests/test_alerts.py` (+3: em-dash title, non-latin-1 tag, ASCII unchanged; +1: `_run_alert_triggers` never raises on DB error — reproduces the exact `no such table: alerts_log` crash and proves it is now swallowed). `tests/test_cli_encoding.py` (+3: cp1252 baseline, reconfigure makes glyphs safe, no-op on non-reconfigurable streams). 261/261 passing.
+
+**Lessons:**
+- A "fire-and-forget" side effect is only fire-and-forget if it is *wrapped*. A docstring promising "never raises" is a comment, not a guarantee — the guarantee must be a `try/except` at the call boundary. Log loudly (no silent failures), drop, continue.
+- HTTP header values are latin-1, not UTF-8. Rich body text ≠ header text. Sanitize at the transport boundary so no caller can ever crash a header.
+- Green tests against temp DBs do not prove the *live* DB is in sync. Schema drift between `SCHEMA`-in-code and `data/quant.db` is invisible until a command touches the missing table. (See `docs/runbooks/TIER1_OPERATIONALIZATION.md` Step 1.)
+- On Windows + Python <3.15, force UTF-8 stdout at entry or every glyph is a latent crash. Subprocess capture hides it; the operator's terminal will not.
+
+---
+
+**Mistake & Correction — 2026-05-31 (follow-up audit: "if we missed those, what else?")**
+
+After the alert/encoding cluster, ran a full read-only audit across three fronts (every `except` clause for type-coverage gaps; every process entry point for UTF-8 coverage; every "never raises / must not fail" contract for a failure-path test) plus a live read-only execution pass of all 8 read-only CLI commands. All 8 exited 0; DailyRunner was found genuinely encoding-correct (UTF-8 log file + `PYTHONUTF8=1` subprocess). Seven findings; five fixed this pass:
+
+1. **F1 — real-money trade commands leaked DB errors.** `quant execute` wrapped `record_trade` in **no** try/except; `quant trade` caught **only `ValueError`**. `record_trade` does DB I/O, so a `sqlite3.OperationalError`/`IntegrityError` (or a SELL-too-many `ValueError` on `execute`) escaped as a raw traceback. Same shape as the latin-1 bug: narrow except, body raises an uncaught type. Fix: both paths now catch `(ValueError, sqlite3.Error)` → clean `Trade rejected: …` + Exit(1).
+2. **F2 — `execute` did two non-atomic writes** (`record_trade` then `mark_recommendation_executed`). A failure between them = a recorded trade with a still-pending rec → possible double-execution. Fix (shared-connection): both functions take an optional `conn`; `execute_command` runs them in one `with get_connection() as conn:` transaction, so either both commit or both roll back. Verified by a storage test that forces a mid-transaction failure and asserts zero rows persisted.
+3. **F3 — `_clamped_regime_score` fell back to NORMAL silently.** Added `logger.warning` (module logger, matching optimizer.py) so a bad regime string is never swallowed unlogged.
+4. **F4 — daily-run "alert failure must never abort the run" was untested.** Added a failure-path test: `send_alert` raising → run still completes with the correct failure count.
+5. **F7 — `DB_PATH` was hardcoded**, so write-commands could only be exercised against the live DB — a root reason these paths were never run. Added `$QUANT_DB` override (`_default_db_path()`). This unlocked a real end-to-end write-path check: BUY → oversell (clean `Cannot sell …` Exit 1) → SELL, against a throwaway DB, live DB untouched.
+
+Deferred as documented/theoretical: F5 (`scripts/daily_run.py` bypasses `_force_utf8_output`, but DailyRunner is internally UTF-8-safe) and F6 (`send_alert`'s narrow except, now moot post-sanitization).
+
+**Tests:** +9 (2 F7, 1 F3, 1 F4, 3 F2-atomicity, 2 F1-CLI). 270/270 passing.
+
+**Lessons:**
+- The audit's highest-yield finding wasn't a bug — it was that **write paths had never been executed** because the DB path was unmockable. Hardcoded resources don't just hurt testing; they guarantee the untested path ships. Make the resource injectable (`$QUANT_DB`) and the smoke gate writes itself.
+- "Narrow `except`, body raises a wider type" is a *pattern*, not a one-off. After finding it once (latin-1), grep every `except (...)` and ask "what else can the body throw?" — F1 was the same bug in two more real-money commands.
+- Two sequential writes that must agree belong in one transaction. "It'll basically never fail between them" is how a double-booked real trade happens.
+
+---
+
+**Mistake & Correction — 2026-05-31 (DB discrepancy fix + a test that corrupted the live DB)**
+
+Full DB audit of `data/quant.db` came back structurally clean (schema migrated, holdings/trades reconcile, prices fresh, 0 NaN, 0 run_log errors) with **one real discrepancy**: 63 `pending` recommendations accumulated across 7 `recommend --save` runs with **no supersession**, so `quant pending` showed up to **7 duplicate BUY cards per ticker** (43 "actionable") plus a zombie BUY ZAG.TO from before ZAG was dropped from the universe. Executing two cards for one ticker = an accidental double-buy.
+
+**Fix (snapshot model):** new `supersede_pending_recommendations(keep_run_id)` (no schema migration — `status` has no CHECK constraint; added a `superseded` status that drops out of the pending view but stays in the append-only log). `recommend --save` calls it after persisting so the newest run is the only pending one. One-time cleanup left 9 pending (latest run) + 54 superseded.
+
+**The bite — a unit test corrupted the live database.** Wiring supersession into `recommend_command` meant the *pre-existing* `test_recommend_save_persists_real_target_weight` (which calls `recommend_command(save=True)` and mocked `save_recommendation` but, of course, not the brand-new supersede call) ran the **real** `supersede_pending_recommendations` against the **default DB_PATH = the live `data/quant.db`** during the suite — silently flipping all 63 pending recs to superseded. Caught only because the follow-up cleanup query found 0 pending where 63 were expected.
+
+**Root-cause fix:** added `conftest.py` that sets `$QUANT_DB` to a throwaway temp DB **before any test imports storage**, so the module-level `DB_PATH` binds to the throwaway and **no test can ever touch the live DB by default**. This is the systemic form of F7. One read-only research test (`test_H005_rsi_backtest`) legitimately needs live price history, so it now pins the real repo `data/quant.db` path explicitly (read-only). 274/274 passing; verified the suite leaves the live DB byte-unchanged.
+
+**Lessons:**
+- Adding a DB **write** to a code path silently widens the blast radius of every existing test that exercises it. A test that was "safe" because the old writes were mocked becomes a live-DB mutator the moment you add an unmocked one.
+- Test isolation must be enforced at the *infrastructure* layer (a conftest that redirects the default DB), not per-test discipline. Per-test mocking is opt-in and therefore eventually forgotten — as it was here.
+- The blast radius was invisible until a state-counting query disagreed with expectation. When a number "should be 63" and is 0, stop and find out *who wrote it* before doing anything else.
