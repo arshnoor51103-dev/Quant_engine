@@ -91,3 +91,11 @@ data:
   fetch_retries: 3            # attempts per ticker on transient yfinance failure
   fetch_backoff_seconds: 2.0  # base backoff in seconds; doubles each retry
   fetch_max_failures: 0       # `quant fetch` exits non-zero when failed tickers > this count
+
+# Re-runnable DB health check (`quant db-audit`)
+# Staleness/lag measured in business days (numpy.busday_count) so weekend/holiday
+# gaps are not flagged. Defaults apply if this block is absent.
+db_audit:
+  price_staleness_warn_days: 5    # freshest price older than this (biz days) → WARN
+  price_staleness_error_days: 15  # freshest price older than this → ERROR (feed broken)
+  per_ticker_lag_warn_days: 3     # a ticker lagging the freshest price by more → WARN

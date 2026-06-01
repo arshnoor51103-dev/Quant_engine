@@ -82,7 +82,8 @@ quant_engine/
 ├── src/
 │   ├── data/
 │   │   ├── ingest.py                ← yfinance → SQLite, incremental OHLCV pull
-│   │   └── storage.py               ← SQLite schema + helpers; recommendations CRUD, signal persistence, alerts log
+│   │   ├── storage.py               ← SQLite schema + helpers; recommendations CRUD, signal persistence, alerts log
+│   │   └── audit.py                 ← read-only DB health auditor: 8 checks + AuditReport + run_audit
 │   ├── portfolio/
 │   │   ├── model.py                 ← holdings, NAV, bucket allocation, price_series
 │   │   ├── metrics.py               ← Sharpe, Sortino, Calmar, max DD, beta, alpha, rolling
@@ -108,11 +109,13 @@ quant_engine/
 │       ├── main.py                  ← typer app, all commands registered
 │       ├── phase2_commands.py       ← signals, backtest, dashboard commands
 │       ├── phase3_commands.py       ← recommend, execute, pending, skip, alert-test commands
-│       └── daily_run_command.py     ← DailyRunner class + quant daily-run command
+│       ├── daily_run_command.py     ← DailyRunner class + quant daily-run command
+│       └── db_audit_command.py      ← quant db-audit command (loads universe+config, prints report, run_log row)
 ├── scripts/
 │   ├── daily_run.py                 ← Task Scheduler entry point; writes dated log to logs/
 │   ├── daily_run.bat                ← .bat wrapper for Task Scheduler (activates venv, runs daily_run.py)
-│   └── setup_scheduler.ps1          ← registers daily_run.bat as a Windows Task Scheduler task
+│   ├── setup_scheduler.ps1          ← registers daily_run.bat as a Windows Task Scheduler task
+│   └── db_audit.py                  ← standalone/scheduled DB health check entry (exit 1 on ERROR)
 ├── tests/
 │   ├── test_metrics.py              ← 11 tests — portfolio/metrics.py
 │   ├── test_signals.py              ← 11 tests — MomentumSignal, ShortTermMomentum, VolRegimeSignal, edge cases
@@ -127,7 +130,8 @@ quant_engine/
 │   ├── test_rsi_signal.py           ← 24 tests — RSI math, Wilder SMMA, gate logic, metadata, edge cases
 │   ├── test_H005_rsi_backtest.py    ←  1 test  — H005 backtest regression (graveyard artifact)
 │   ├── test_backtest.py             ←  8 tests — avg_holdings > 0, summary_str(), metrics keys, ValueError
-│   └── test_integration.py          ← 10 tests — full pipeline: signal layer → backtest layer → recommend layer
+│   ├── test_integration.py          ← 10 tests — full pipeline: signal layer → backtest layer → recommend layer
+│   └── test_db_audit.py             ← 44 tests — DB auditor: 8 checks, AuditReport, run_audit, db-audit CLI, scripts entry
 └── data/                            ← SQLite db + parquet cache (gitignored)
 ```
 
@@ -170,6 +174,7 @@ $env:PYTHONUTF8 = "1"; python -m src.cli.main signals --signal-type momentum
 | `quant skip <ID>` | Mark a pending recommendation as skipped. |
 | `quant alert-test` | Fire a test ntfy.sh notification to verify the alert pipeline is wired. |
 | `quant daily-run [--cash N]` | Run the full daily pipeline interactively (fetch → momentum → vol_regime → recommend --optimize --save --notify). Stdout only — use `scripts/daily_run.py` for scheduled runs with file logging. |
+| `quant db-audit [--json]` | Read-only DB health check: schema/migrations completeness, holdings↔trades reconciliation, pending-rec supersession (no duplicate actionable cards), universe integrity, price coverage/freshness/quality. Exit 1 on any ERROR (0 on clean or WARN-only). Writes one `run_log` summary row. `scripts/db_audit.py` is the scheduled entry. |
 
 ---
 
@@ -413,8 +418,11 @@ tests/test_rsi_signal.py           24 tests — RSI math, Wilder SMMA, gate logi
 tests/test_H005_rsi_backtest.py     1 test  — H005 backtest regression (graveyard artifact)
 tests/test_backtest.py              8 tests — avg_holdings > 0, summary_str(), metrics keys, ValueError
 tests/test_integration.py          10 tests — full pipeline: signal layer → backtest layer → recommend layer
+tests/test_db_audit.py             44 tests — DB auditor: 8 checks, AuditReport, run_audit, db-audit CLI, scripts entry
 ─────────────────────────────────────────────────────────────────────────────
-TOTAL                             204 tests — 204/204 passing as of v1.0.0-tier1 (2026-05-28)
+(per-file counts above are the v1.0.0 baseline; the 2026-05-31 hardening added
+ test_cli_encoding.py + test_phase3_cli.py and grew several files — see git log)
+TOTAL                             318 tests — 318/318 passing (2026-05-31, feat/db-audit)
 ```
 
 **Run**: `python -m pytest tests/ -v`
