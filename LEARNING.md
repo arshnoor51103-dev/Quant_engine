@@ -604,3 +604,35 @@ Full DB audit of `data/quant.db` came back structurally clean (schema migrated, 
 - Adding a DB **write** to a code path silently widens the blast radius of every existing test that exercises it. A test that was "safe" because the old writes were mocked becomes a live-DB mutator the moment you add an unmocked one.
 - Test isolation must be enforced at the *infrastructure* layer (a conftest that redirects the default DB), not per-test discipline. Per-test mocking is opt-in and therefore eventually forgotten — as it was here.
 - The blast radius was invisible until a state-counting query disagreed with expectation. When a number "should be 63" and is 0, stop and find out *who wrote it* before doing anything else.
+
+---
+
+**Decision — 2026-05-31 — `quant db-audit`: codify the manual DB health check into a re-runnable command**
+
+The 2026-05-31 pending pile-up (63 unsuperseded recs + zombie ZAG.TO) was found by a *manual* DB audit. Manual audits don't re-run, so the next drift would again be invisible until something broke. Codifying the sweep as `quant db-audit`.
+
+**Contract (operator-approved):**
+- **Exit code:** 0 when clean or WARN-only; **1 on any ERROR finding** — so `daily-run` / Task Scheduler can gate on real corruption while tolerating benign warnings (weekend-stale prices).
+- **Read-only.** Never mutates `prices/holdings/trades/recommendations`. Remediation stays in the existing commands (`quant init` for schema, `recommend --save` for supersession); the audit *names* the fix in its finding message. The one permitted write is a single summary row to `run_log` (component=`db_audit`) — `run_log` is the system event log, not a domain table.
+- **Output:** human severity-grouped table by default, `--json` for machine/scheduler consumption.
+
+**Architecture:** read-only compute is separated from command I/O so the audit is unit-testable without stdout/exit/writes.
+- `src/data/audit.py` — `AuditFinding`/`AuditReport` dataclasses + check-function registry + `run_audit(conn, universe_tickers, today, thresholds) -> AuditReport`. Everything injected for determinism. `AuditReport.exit_code = 1 if any ERROR else 0`.
+- `src/cli/db_audit_command.py` — loads universe + thresholds, opens conn, calls `run_audit`, renders/prints, writes the `run_log` summary, raises `typer.Exit(report.exit_code)`.
+- `scripts/db_audit.py` — thin Task-Scheduler entry mirroring `scripts/daily_run.py`.
+
+**Check catalog (severity):**
+1. `schema` (ERROR) — every `SCHEMA` table exists; `recommendations` has all migration-added columns. (Catches Bug A: a live DB predating `alerts_log`/`schema_version`.)
+2. `migrations` (ERROR) — every `_MIGRATIONS` version recorded in `schema_version`.
+3. `holdings_reconciliation` (ERROR) — holding `units` == Σ(BUY) − Σ(SELL); `avg_cost` == VWAP; no holding without backing trades; no net-positive ticker missing a holding row.
+4. `pending_supersession` (ERROR) — all `pending` recs share one (latest) `run_id`; no duplicate ticker+action among pending. (Catches the pile-up.)
+5. `universe_integrity` — off-universe **pending rec** → WARN (zombie); off-universe **holding** → ERROR (universe-lock breach, Hard Constraint 2).
+6. `price_coverage` (ERROR) — every universe ticker has ≥1 price row.
+7. `price_freshness` (WARN/ERROR) — freshest price age vs `staleness_warn_days`/`staleness_error_days` (business days via `numpy.busday_count`); a ticker lagging the freshest by > `per_ticker_lag_warn_days` → WARN.
+8. `price_quality` (ERROR) — no NULL or ≤0 `close`/`adj_close`.
+
+**Thresholds:** new `db_audit:` block in `config/portfolio.yaml` (`price_staleness_warn_days: 5`, `price_staleness_error_days: 15`, `per_ticker_lag_warn_days: 3`); sensible defaults if absent.
+
+**Deliberate scope calls:** no `--fix` (read-only); not auto-wired into `daily-run` this pass (chaining a non-zero-exit audit changes that pipeline's failure semantics — its own decision).
+
+**Build:** TDD, one check at a time. Tests seed a temp DB from `SCHEMA`, insert clean + broken states, assert findings/severity; CLI test via typer `CliRunner` against a temp `$QUANT_DB`. Live DB never touched (conftest isolation).

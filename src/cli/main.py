@@ -38,6 +38,7 @@ from .phase3_commands import (
     skip_command,
 )
 from .daily_run_command import daily_run_command
+from .db_audit_command import db_audit_command
 from ..alerts.ntfy import send_alert
 
 def _force_utf8_output() -> None:
@@ -272,6 +273,7 @@ app.command(name="pending")(pending_command)
 app.command(name="skip")(skip_command)
 app.command(name="signal-history")(signal_history_command)
 app.command(name="daily-run")(daily_run_command)
+app.command(name="db-audit")(db_audit_command)
 
 
 if __name__ == "__main__":
